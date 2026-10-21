@@ -133,7 +133,6 @@ function render() {
     <details class="card rules">
       <summary>${ICONS.info}<span>${s.howItWorks}</span></summary>
       <ol>${s.rules.map(r => `<li>${r}</li>`).join('')}</ol>
-      <div class="notice">${ICONS.alert}<span>${esc(s.notice)}</span></div>
     </details>
 
     <button class="fab" data-action="book">${ICONS.plus}<span>${s.book}</span></button>

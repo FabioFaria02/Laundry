@@ -204,7 +204,6 @@ h2 { font-size: 18px; letter-spacing: -.01em; margin: 0 0 12px; }
 .rules summary::after { content: "›"; margin-left: auto; font-size: 22px; color: var(--muted); transition: transform .2s; }
 .rules[open] summary::after { transform: rotate(90deg); }
 .rules ol { margin: 14px 0 12px; padding-left: 22px; display: grid; gap: 8px; font-size: 15px; }
-.notice { display: flex; gap: 10px; background: var(--warn-soft); color: var(--warn); padding: 12px; border-radius: 12px; font-size: 14px; }
 
 .fab {
   position: fixed; right: max(16px, calc(50vw - 344px)); bottom: calc(env(safe-area-inset-bottom) + 18px); z-index: 5;

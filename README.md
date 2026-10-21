@@ -13,7 +13,7 @@ Funciona em iPhone e Android — abre-se no browser e pode ser adicionada ao ecr
 - **"Já acabei"** liberta a máquina mais cedo; podes cancelar as tuas reservas.
 - **Adicionar ao calendário** (.ics) com lembrete 10 min antes e no fim do programa.
 - Inglês e português (botão EN/PT), modo escuro automático.
-- Regras da lavandaria (moedas de 50 CZK, portas entreabertas, aviso do assobio da máquina).
+- Regras da lavandaria (moedas de 50 CZK, portas entreabertas).
 
 Na primeira vez cada pessoa escolhe o seu nome (fica guardado no telemóvel).
 

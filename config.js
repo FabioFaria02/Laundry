@@ -1,14 +1,11 @@
-// Paste your Firebase web app config here to share bookings between everyone.
-// See README.md → "Ligar a base de dados partilhada".
-// While this is null the app runs in demo mode (bookings saved only on this device).
-export const FIREBASE_CONFIG = null;
-
-// Example:
-// export const FIREBASE_CONFIG = {
-//   apiKey: "AIza...",
-//   authDomain: "laundry-xxxx.firebaseapp.com",
-//   projectId: "laundry-xxxx",
-//   storageBucket: "laundry-xxxx.appspot.com",
-//   messagingSenderId: "123456789",
-//   appId: "1:123456789:web:abc123",
-// };
+// Firebase web app config — bookings are shared between everyone through Firestore.
+// These keys are public by design; access is controlled by firestore.rules.
+// Set to null to run in demo mode (bookings saved only on this device).
+export const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCWNT9RJG-xyPqC6oMRVXgKp1ADHaANhEw",
+  authDomain: "laundry-34f67.firebaseapp.com",
+  projectId: "laundry-34f67",
+  storageBucket: "laundry-34f67.firebasestorage.app",
+  messagingSenderId: "112557852811",
+  appId: "1:112557852811:web:d6733f5729ebaf74606c8e",
+};

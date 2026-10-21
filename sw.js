@@ -1,5 +1,5 @@
 // Network-first for the app shell so updates show up right away; cache is only an offline fallback.
-const CACHE = 'laundry-v4';
+const CACHE = 'laundry-v5';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'store.js', 'i18n.js', 'config.js', 'manifest.webmanifest', 'icons/icon.svg'];
 
 self.addEventListener('install', e => {
@@ -17,8 +17,12 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  // no-cache: always revalidate with the server instead of reusing GitHub Pages' 10-minute HTTP cache
+  const fresh = e.request.mode === 'navigate'
+    ? new Request(e.request.url, { cache: 'no-cache', credentials: 'same-origin' })
+    : new Request(e.request, { cache: 'no-cache' });
   e.respondWith(
-    fetch(e.request)
+    fetch(fresh)
       .then(res => {
         const copy = res.clone();
         caches.open(CACHE).then(c => c.put(e.request, copy));

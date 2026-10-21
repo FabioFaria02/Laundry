@@ -167,7 +167,8 @@ function machineCard(m) {
       <div class="status busy"><span class="dot"></span>${s.inUse}</div>
       <div class="who">${avatar(cur.person, 'sm')}<span>${esc(cur.person)}${cur.person === state.me ? ` (${s.you})` : ''}</span></div>
       <div class="big">${esc(s.minLeft(minutesUntil(cur.end)))}</div>
-      <div class="progress"><span style="width:${pct}%"></span></div>`;
+      <div class="progress"><span style="width:${pct}%"></span></div>
+      ${cur.person === state.me ? `<button class="btn small done" data-action="done" data-id="${esc(cur.id)}">${s.markDone}</button>` : ''}`;
   } else {
     body = `
       <div class="status free"><span class="dot"></span>${s.free}</div>
@@ -517,6 +518,13 @@ $('#app').addEventListener('click', e => {
     state.day = Number(el.dataset.day);
     state.scrollTimeline = true;
     render();
+  } else if (a === 'done') {
+    e.stopPropagation();
+    if (!confirm(t().markDoneConfirm)) return;
+    el.disabled = true;
+    store.finish(el.dataset.id, Date.now())
+      .then(() => toast(t().freed))
+      .catch(err => { console.error(err); el.disabled = false; toast(t().error); });
   } else if (a === 'now') {
     e.stopPropagation();
     openBook({ machine: el.dataset.machine, start: Math.floor(Date.now() / MIN) * MIN });

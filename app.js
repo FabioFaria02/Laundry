@@ -161,19 +161,22 @@ function machineCard(m) {
   const next = nextOf(m);
   const name = m === 'washer' ? s.washer : s.dryer;
   let body;
+  let action = '';
   if (cur) {
     const pct = Math.min(100, Math.max(0, ((Date.now() - cur.start) / (cur.end - cur.start)) * 100));
     body = `
       <div class="status busy"><span class="dot"></span>${s.inUse}</div>
       <div class="who">${avatar(cur.person, 'sm')}<span>${esc(cur.person)}${cur.person === state.me ? ` (${s.you})` : ''}</span></div>
       <div class="big">${esc(s.minLeft(minutesUntil(cur.end)))}</div>
-      <div class="progress"><span style="width:${pct}%"></span></div>
-      ${cur.person === state.me ? `<button class="btn small done" data-action="done" data-id="${esc(cur.id)}">${s.markDone}</button>` : ''}`;
+      <div class="progress"><span style="width:${pct}%"></span></div>`;
+    if (cur.person === state.me) {
+      action = `<button class="btn small" data-action="done" data-id="${esc(cur.id)}">${s.markDone}</button>`;
+    }
   } else {
     body = `
       <div class="status free"><span class="dot"></span>${s.free}</div>
-      <div class="big">${next ? esc(s.freeUntil(hhmm(next.start))) : '&nbsp;'}</div>
-      <button class="btn small" data-action="now" data-machine="${m}">${s.useNow}</button>`;
+      <div class="big">${next ? esc(s.freeUntil(hhmm(next.start))) : '&nbsp;'}</div>`;
+    action = `<button class="btn small" data-action="now" data-machine="${m}">${s.useNow}</button>`;
   }
   const nextLine = next
     ? `<div class="next muted">${s.next}: ${esc(next.person)} · ${startOfDay(next.start) === startOfDay(Date.now()) ? hhmm(next.start) : `${esc(dayLabel(next.start))} ${hhmm(next.start)}`}</div>`
@@ -185,7 +188,7 @@ function machineCard(m) {
         <div><div class="machine-name">${name}</div><div class="muted tiny">${s.machineNo(MACHINES[m].num)}</div></div>
       </div>
       ${body}
-      ${nextLine}
+      <div class="machine-foot">${nextLine}${action}</div>
     </article>`;
 }
 

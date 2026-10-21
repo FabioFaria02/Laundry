@@ -119,7 +119,9 @@ h2 { font-size: 18px; letter-spacing: -.01em; margin: 0 0 12px; }
 .big { font-size: 15px; font-weight: 600; }
 .progress { height: 6px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
 .progress span { display: block; height: 100%; background: var(--busy); border-radius: inherit; transition: width .4s; }
-.next { font-size: 13px; margin-top: auto; }
+.next { font-size: 13px; }
+.machine-foot { margin-top: auto; display: grid; gap: 10px; padding-top: 4px; }
+.machine-foot .btn { width: 100%; }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;

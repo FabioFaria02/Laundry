@@ -33,7 +33,7 @@ Sem isto a app funciona em **modo demo** (cada telemóvel só vê as suas reserv
 
 ## 2. Pôr online (GitHub Pages)
 
-1. Faz merge para `main`.
+1. O deploy corre sozinho a cada push para `main` ou `ccr-b2c91620-hm23d6`.
 2. No GitHub: **Settings → Pages → Source: GitHub Actions**.
 3. O workflow publica em `https://<utilizador>.github.io/<repo>/`. Partilha esse link no grupo da casa.
 

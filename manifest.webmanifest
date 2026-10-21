@@ -1,6 +1,6 @@
 {
-  "name": "Laundry",
-  "short_name": "Laundry",
+  "name": "Money Laundry",
+  "short_name": "Money Laundry",
   "description": "Book the house washing machine and dryer.",
   "start_url": "./",
   "scope": "./",

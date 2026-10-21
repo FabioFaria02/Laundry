@@ -1,7 +1,7 @@
 export const STRINGS = {
   en: {
     locale: 'en-GB',
-    title: 'Laundry',
+    title: 'Money Laundry',
     hi: name => `Hi, ${name}`,
     washer: 'Washing machine',
     dryer: 'Dryer',
@@ -62,7 +62,7 @@ export const STRINGS = {
   },
   pt: {
     locale: 'pt-PT',
-    title: 'Lavandaria',
+    title: 'Money Laundry',
     hi: name => `Olá, ${name}`,
     washer: 'Máquina de lavar',
     dryer: 'Máquina de secar',

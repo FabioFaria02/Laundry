@@ -1,4 +1,4 @@
-# 🧺 Laundry — reservas da lavandaria da casa
+# 🧺 Money Laundry — reservas da lavandaria da casa
 
 Web app (PWA) para as 18 pessoas da casa reservarem a **máquina de lavar (máquina 2)** e a **máquina de secar (máquina 1)**.
 Funciona em iPhone e Android — abre-se no browser e pode ser adicionada ao ecrã inicial como se fosse uma app.

@@ -1,5 +1,5 @@
 // Network-first for the app shell so updates show up right away; cache is only an offline fallback.
-const CACHE = 'laundry-v5';
+const CACHE = 'laundry-v6';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'store.js', 'i18n.js', 'config.js', 'manifest.webmanifest', 'icons/icon.svg'];
 
 self.addEventListener('install', e => {
@@ -29,5 +29,16 @@ self.addEventListener('fetch', e => {
         return res;
       })
       .catch(() => caches.match(e.request)),
+  );
+});
+
+// tapping a reminder opens (or focuses) the app
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      const open = list.find(c => c.url.startsWith(self.registration.scope));
+      return open ? open.focus() : self.clients.openWindow(self.registration.scope);
+    }),
   );
 });

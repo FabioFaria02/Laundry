@@ -39,6 +39,13 @@ async function firebaseStore(onChange, onError) {
     add: b => fs.addDoc(col, { ...b, createdAt: Date.now() }),
     finish: (id, end) => fs.updateDoc(fs.doc(db, 'bookings', id), { end }),
     remove: id => fs.deleteDoc(fs.doc(db, 'bookings', id)),
+    // edit = delete + create in one atomic batch (the rules only allow shortening `end` in place)
+    replace: (id, b) => {
+      const batch = fs.writeBatch(db);
+      batch.delete(fs.doc(db, 'bookings', id));
+      batch.set(fs.doc(col), { ...b, createdAt: Date.now() });
+      return batch.commit();
+    },
   };
 }
 
@@ -61,5 +68,6 @@ function localStore(onChange) {
     add: async b => write([...read(), { ...b, id: newId(), createdAt: Date.now() }]),
     finish: async (id, end) => write(read().map(b => (b.id === id ? { ...b, end } : b))),
     remove: async id => write(read().filter(b => b.id !== id)),
+    replace: async (id, b) => write([...read().filter(x => x.id !== id), { ...b, id: newId(), createdAt: Date.now() }]),
   };
 }

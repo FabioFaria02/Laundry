@@ -20,6 +20,8 @@ const ICONS = {
   plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
   info: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
   alert: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/></svg>',
+  bell: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15L6 16z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>',
+  bellOff: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15L6 16z"/><path d="M10 20.5a2 2 0 0 0 4 0"/><path d="M3.5 3.5l17 17"/></svg>',
   cal: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
 };
 
@@ -38,6 +40,8 @@ const dateValue = ms => { const d = new Date(ms); return `${d.getFullYear()}-${p
 const overlaps = (a, b) => a.start < b.end && b.start < a.end;
 const minutesUntil = ms => Math.max(1, Math.ceil((ms - Date.now()) / MIN));
 const hue = name => [...name].reduce((h, c) => (h * 31 + c.codePointAt(0)) % 360, 7);
+const fmtDur = d => (d < 60 ? `${d} min` : `${Math.floor(d / 60)} h${d % 60 ? ` ${pad(d % 60)}` : ''}`);
+const machineName = m => (m === 'washer' ? t().washer : t().dryer);
 const avatar = (name, cls = '') =>
   `<span class="avatar ${cls}" style="--h:${hue(name)}">${esc([...name][0] || '?')}</span>`;
 
@@ -51,6 +55,7 @@ const state = {
   duration: Number(storage.get('laundry.duration')) || 90,
   mode: 'local',
   scrollTimeline: true,
+  notify: storage.get('laundry.notify') !== 'off',
 };
 let store;
 let refreshSheet = null;
@@ -99,6 +104,8 @@ function render() {
       </div>
       <div class="topbar-actions">
         <button class="chip" data-action="lang" aria-label="Language">${state.lang === 'pt' ? 'EN' : 'PT'}</button>
+        <button class="chip icon-chip ${notifyActive() ? 'on' : ''}" data-action="notify"
+          aria-label="${s.notifLabel}" aria-pressed="${notifyActive()}">${notifyActive() ? ICONS.bell : ICONS.bellOff}</button>
         <button class="me-btn" data-action="who" aria-label="${esc(s.change)}">
           ${state.me ? avatar(state.me) : '<span class="avatar">?</span>'}
         </button>
@@ -307,23 +314,26 @@ function openWho() {
     </div>`);
 }
 
-function openBook({ machine = state.machine, start = null } = {}) {
+function openBook({ machine = state.machine, start = null, edit = null } = {}) {
   if (!state.me) return openWho();
   const s = t();
-  const form = {
-    machine,
-    start: start ?? nextFreeStart(machine, state.day === startOfDay(Date.now()) ? roundUp(Date.now()) : state.day + 9 * 3600e3, state.duration),
-    duration: state.duration,
-    dryerAfter: 0,
-  };
+  const form = edit
+    ? { machine: edit.machine, start: edit.start, duration: Math.round((edit.end - edit.start) / MIN), dryerAfter: 0 }
+    : {
+      machine,
+      start: start ?? nextFreeStart(machine, state.day === startOfDay(Date.now()) ? roundUp(Date.now()) : state.day + 9 * 3600e3, state.duration),
+      duration: state.duration,
+      dryerAfter: 0,
+    };
 
   const draw = () => {
     const end = form.start + form.duration * MIN;
     const main = { start: form.start, end };
     const dryerSlot = form.dryerAfter ? { start: end, end: end + form.dryerAfter * MIN } : null;
     const problems = [];
-    if (form.start < Date.now() - 5 * MIN) problems.push(s.past);
-    for (const c of conflictsFor(form.machine, main)) {
+    const startChanged = !edit || form.start !== edit.start;
+    if (startChanged && form.start < Date.now() - 5 * MIN) problems.push(s.past);
+    for (const c of conflictsFor(form.machine, main, edit?.id)) {
       problems.push(`${s.conflict} ${esc(c.person)} (${hhmm(c.start)}–${hhmm(c.end)})`);
     }
     if (dryerSlot) {
@@ -331,15 +341,16 @@ function openBook({ machine = state.machine, start = null } = {}) {
         problems.push(`${s.dryer}: ${s.conflict} ${esc(c.person)} (${hhmm(c.start)}–${hhmm(c.end)})`);
       }
     }
-    const chips = (list, value, action, extra = '') =>
-      list.map(d => `<button type="button" class="chip ${d === value ? 'active' : ''}" data-action="${action}" data-value="${d}">${d ? `${d >= 60 ? `${d / 60} h` : `${d} min`}`.replace('1.5 h', '1 h 30') : s.no}</button>`).join('') + extra;
+    const durations = [...new Set([...DURATIONS, form.duration])].sort((x, y) => x - y);
+    const chips = (list, value, action) =>
+      list.map(d => `<button type="button" class="chip ${d === value ? 'active' : ''}" data-action="${action}" data-value="${d}">${d ? fmtDur(d) : s.no}</button>`).join('');
 
     openSheet(`
-      <h2>${s.bookSlot}</h2>
+      <h2>${edit ? s.editBooking : s.bookSlot}</h2>
       <div class="segmented wide">
         ${['washer', 'dryer'].map(m => `
           <button type="button" aria-selected="${form.machine === m}" data-action="f-machine" data-value="${m}">
-            ${ICONS[m]}<span>${m === 'washer' ? s.washer : s.dryer}</span>
+            ${ICONS[m]}<span>${machineName(m)}</span>
           </button>`).join('')}
       </div>
       <div class="fields">
@@ -351,21 +362,21 @@ function openBook({ machine = state.machine, start = null } = {}) {
         </label>
       </div>
       <div class="field-label">${s.duration}</div>
-      <div class="chips">${chips(DURATIONS, form.duration, 'f-duration')}</div>
-      ${form.machine === 'washer' ? `
+      <div class="chips">${chips(durations, form.duration, 'f-duration')}</div>
+      ${form.machine === 'washer' && !edit ? `
         <div class="field-label">${s.dryerAfter}</div>
         <div class="chips">${chips([0, 60, 90, 120], form.dryerAfter, 'f-dryer')}</div>` : ''}
       <div class="summary">
         ${avatar(state.me, 'sm')}
         <div>
           <b>${esc(dayLabel(form.start))} · ${hhmm(form.start)}–${hhmm(end)}</b>
-          <div class="muted tiny">${form.machine === 'washer' ? s.washer : s.dryer}${dryerSlot ? ` + ${s.dryer} ${hhmm(dryerSlot.start)}–${hhmm(dryerSlot.end)}` : ''}</div>
+          <div class="muted tiny">${machineName(form.machine)}${dryerSlot ? ` + ${s.dryer} ${hhmm(dryerSlot.start)}–${hhmm(dryerSlot.end)}` : ''}</div>
         </div>
       </div>
       ${problems.length ? `<div class="problems">${problems.map(p => `<div>${ICONS.alert}<span>${p}</span></div>`).join('')}</div>` : ''}
       <div class="sheet-actions">
         <button type="button" class="btn ghost" data-action="close">${s.cancel}</button>
-        <button type="button" class="btn" data-action="f-submit" ${problems.length ? 'disabled' : ''}>${s.confirm}</button>
+        <button type="button" class="btn" data-action="f-submit" ${problems.length ? 'disabled' : ''}>${edit ? s.saveChanges : s.confirm}</button>
       </div>
     `, draw);
 
@@ -395,22 +406,32 @@ function openBook({ machine = state.machine, start = null } = {}) {
       if (a === 'close') closeSheet();
       if (a === 'f-submit') {
         btn.disabled = true;
+        // Firestore shows our own write in the live list before the server confirms it;
+        // stop re-validating so the new booking is not reported as overlapping itself.
+        refreshSheet = null;
+        askNotifyPermission();
         const end = form.start + form.duration * MIN;
+        const booking = { machine: form.machine, person: state.me, start: form.start, end };
         try {
-          await store.add({ machine: form.machine, person: state.me, start: form.start, end });
-          if (form.dryerAfter) {
-            await store.add({ machine: 'dryer', person: state.me, start: end, end: end + form.dryerAfter * MIN });
+          if (edit) {
+            await store.replace(edit.id, booking);
+          } else {
+            await store.add(booking);
+            if (form.dryerAfter) {
+              await store.add({ machine: 'dryer', person: state.me, start: end, end: end + form.dryerAfter * MIN });
+            }
+            state.duration = form.duration;
+            storage.set('laundry.duration', String(form.duration));
           }
-          state.duration = form.duration;
-          storage.set('laundry.duration', String(form.duration));
           state.machine = form.machine;
           state.day = startOfDay(form.start);
           state.scrollTimeline = true;
           closeSheet();
-          toast(s.booked);
+          toast(edit ? s.updated : s.booked);
           render();
         } catch (err) {
           console.error(err);
+          refreshSheet = draw;
           btn.disabled = false;
           toast(s.error);
         }
@@ -422,18 +443,76 @@ function openBook({ machine = state.machine, start = null } = {}) {
 
 function openDetail(id) {
   const s = t();
+  let mode = 'view'; // 'view' | 'remaining' | 'cancel'
+  let remaining = null;
+  let busy = false;
+
   const draw = () => {
+    if (busy) return;
     const b = state.bookings.find(x => x.id === id);
     if (!b) return closeSheet();
+    const now = Date.now();
     const mine = b.person === state.me;
-    const live = b.start <= Date.now() && b.end > Date.now();
-    const done = b.end <= Date.now();
+    const live = b.start <= now && b.end > now;
+    const done = b.end <= now;
+    const startsSoon = !live && !done && b.start - now <= 30 * MIN;
+    const linked = sorted().filter(x => x.person === b.person && x.machine !== b.machine && x.id !== b.id
+      && startOfDay(x.start) === startOfDay(b.start) && x.start > now);
+
+    let body;
+    if (mode === 'remaining') {
+      if (remaining === null) remaining = live ? minutesUntil(b.end) : Math.round((b.end - b.start) / MIN);
+      const end = Math.round((now + remaining * MIN) / MIN) * MIN;
+      const start = Math.max(Math.min(b.start, now), end - MAX_MIN * MIN);
+      const hits = conflictsFor(b.machine, { start, end }, b.id);
+      body = `
+        <label class="remaining">
+          <span>${s.remainingHint}</span>
+          <div class="stepper">
+            <button type="button" class="chip" data-action="r-step" data-value="-5">−5</button>
+            <input type="number" inputmode="numeric" min="1" max="${MAX_MIN}" data-field="remaining" value="${remaining}">
+            <button type="button" class="chip" data-action="r-step" data-value="5">+5</button>
+          </div>
+        </label>
+        <p class="muted center">${esc(s.newEnd(hhmm(end)))}</p>
+        ${hits.length ? `<div class="problems warn">${hits.map(c => `<div>${ICONS.alert}<span>${s.conflict} ${esc(c.person)} (${hhmm(c.start)}–${hhmm(c.end)}) — ${s.tellThem}</span></div>`).join('')}</div>` : ''}
+        <div class="sheet-actions">
+          <button type="button" class="btn ghost" data-action="back">${s.back}</button>
+          <button type="button" class="btn" data-action="r-save">${s.saveChanges}</button>
+        </div>`;
+    } else if (mode === 'cancel') {
+      body = `
+        <h3 class="confirm-title">${s.cancelConfirm}</h3>
+        <div class="checks">
+          ${linked.map(x => `
+            <label class="check">
+              <input type="checkbox" data-linked="${esc(x.id)}" checked>
+              <span class="machine-icon sm">${ICONS[x.machine]}</span>
+              <span>${esc(s.alsoCancel(machineName(x.machine), `${hhmm(x.start)}–${hhmm(x.end)}`))}</span>
+            </label>`).join('')}
+        </div>
+        <div class="sheet-actions">
+          <button type="button" class="btn ghost" data-action="back">${s.back}</button>
+          <button type="button" class="btn danger" data-action="c-confirm">${s.cancelBooking}</button>
+        </div>`;
+    } else {
+      body = `
+        <div class="sheet-actions stack">
+          ${mine && (live || startsSoon) ? `<button type="button" class="btn" data-action="remaining">${s.setRemaining}</button>` : ''}
+          ${mine && live ? `<button type="button" class="btn ghost" data-action="finish">${s.finishNow}</button>` : ''}
+          ${mine && !live && !done ? `<button type="button" class="btn ghost" data-action="edit">${s.edit}</button>` : ''}
+          ${!done ? `<button type="button" class="btn ghost" data-action="ics">${ICONS.cal}<span>${s.addCal}</span></button>` : ''}
+          ${mine && !live && !done ? `<button type="button" class="btn danger" data-action="delete">${s.cancelBooking}</button>` : ''}
+          <button type="button" class="btn ghost" data-action="close">${s.close}</button>
+        </div>`;
+    }
+
     openSheet(`
       <div class="detail-head">
         ${avatar(b.person, 'lg')}
         <div>
           <h2>${esc(b.person)}${mine ? ` <span class="muted">(${s.you})</span>` : ''}</h2>
-          <div class="muted">${b.machine === 'washer' ? s.washer : s.dryer} · ${s.machineNo(MACHINES[b.machine].num)}</div>
+          <div class="muted">${machineName(b.machine)} · ${s.machineNo(MACHINES[b.machine].num)}</div>
         </div>
       </div>
       <div class="summary">
@@ -443,12 +522,16 @@ function openDetail(id) {
           <div class="muted tiny">${live ? esc(s.minLeft(minutesUntil(b.end))) : done ? '' : esc(s.inMin(minutesUntil(b.start)))}</div>
         </div>
       </div>
-      <div class="sheet-actions stack">
-        ${!done ? `<button type="button" class="btn ghost" data-action="ics">${ICONS.cal}<span>${s.addCal}</span></button>` : ''}
-        ${mine && live ? `<button type="button" class="btn" data-action="finish">${s.finishNow}</button>` : ''}
-        ${mine && !live && !done ? `<button type="button" class="btn danger" data-action="delete">${s.cancelBooking}</button>` : ''}
-        <button type="button" class="btn ghost" data-action="close">${s.close}</button>
-      </div>`, draw);
+      ${body}`, draw);
+
+    const input = sheet().querySelector('[data-field="remaining"]');
+    if (input) {
+      input.oninput = () => {
+        const v = Math.round(Number(input.value));
+        if (v >= 1) remaining = Math.min(MAX_MIN, v);
+      };
+      input.onchange = () => draw();
+    }
 
     sheet().onclick = async e => {
       const btn = e.target.closest('[data-action]');
@@ -456,12 +539,32 @@ function openDetail(id) {
       const a = btn.dataset.action;
       if (a === 'close') return closeSheet();
       if (a === 'ics') return downloadIcs(b);
+      if (a === 'edit') return openBook({ edit: b });
+      if (a === 'back') { mode = 'view'; remaining = null; return draw(); }
+      if (a === 'remaining') { mode = 'remaining'; return draw(); }
+      if (a === 'r-step') { remaining = Math.min(MAX_MIN, Math.max(1, remaining + Number(btn.dataset.value))); return draw(); }
+      if (a === 'delete') { mode = 'cancel'; return draw(); }
+      if (!['finish', 'c-confirm', 'r-save'].includes(a)) return;
+      busy = true;
+      btn.disabled = true;
       try {
         if (a === 'finish') { await store.finish(b.id, Date.now()); toast(s.freed); }
-        if (a === 'delete') { await store.remove(b.id); toast(s.cancelled); }
+        if (a === 'c-confirm') {
+          const extra = [...sheet().querySelectorAll('[data-linked]:checked')].map(x => x.dataset.linked);
+          await Promise.all([b.id, ...extra].map(x => store.remove(x)));
+          toast(s.cancelled);
+        }
+        if (a === 'r-save') {
+          const end = Math.round((Date.now() + remaining * MIN) / MIN) * MIN;
+          const start = Math.max(Math.min(b.start, Date.now()), end - MAX_MIN * MIN);
+          await store.replace(b.id, { machine: b.machine, person: b.person, start, end });
+          toast(s.updated);
+        }
         closeSheet();
       } catch (err) {
         console.error(err);
+        busy = false;
+        btn.disabled = false;
         toast(s.error);
       }
     };
@@ -492,6 +595,75 @@ function downloadIcs(b) {
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
+// ---------- reminders ----------
+// Local notifications for the selected person only. They fire while the app is open
+// (or recently in the background); there is no push server.
+const NOTIFY_SUPPORTED = 'Notification' in window;
+const notifyActive = () => state.notify && NOTIFY_SUPPORTED && Notification.permission !== 'denied';
+let reminderTimer;
+
+function askNotifyPermission() {
+  if (state.notify && NOTIFY_SUPPORTED && Notification.permission === 'default') {
+    Notification.requestPermission().then(() => { render(); checkReminders(); }).catch(() => {});
+  }
+}
+
+function toggleNotify() {
+  const s = t();
+  if (!NOTIFY_SUPPORTED) return toast(s.notifUnsupported);
+  if (Notification.permission === 'denied') return toast(s.notifBlocked);
+  state.notify = !state.notify;
+  storage.set('laundry.notify', state.notify ? 'on' : 'off');
+  toast(state.notify ? s.notifOn : s.notifOff);
+  askNotifyPermission();
+  render();
+  checkReminders();
+}
+
+function reminderEvents() {
+  return state.bookings
+    .filter(b => b.person === state.me && b.end > Date.now() - MIN)
+    .flatMap(b => [
+      { key: `${b.id}:start:${b.start}`, at: b.start - 10 * MIN, until: b.start, body: t().startSoon(machineName(b.machine)), createdAt: b.createdAt },
+      { key: `${b.id}:end:${b.end}`, at: b.end - 5 * MIN, until: b.end, body: t().endSoon(machineName(b.machine)), createdAt: b.createdAt },
+    ])
+    // skip reminders whose moment had already passed when the booking was made (e.g. "Use now")
+    .filter(ev => !ev.createdAt || ev.createdAt < ev.at);
+}
+
+function checkReminders() {
+  clearTimeout(reminderTimer);
+  if (!state.me || !state.notify || !NOTIFY_SUPPORTED || Notification.permission !== 'granted') return;
+  let sent;
+  try { sent = JSON.parse(storage.get('laundry.sent')) || {}; } catch { sent = {}; }
+  const now = Date.now();
+  let nextAt = Infinity;
+  for (const ev of reminderEvents()) {
+    if (sent[ev.key]) continue;
+    if (now >= ev.at && now < ev.until) {
+      sent[ev.key] = now;
+      showNotification(ev);
+    } else if (ev.at > now) {
+      nextAt = Math.min(nextAt, ev.at);
+    }
+  }
+  for (const k of Object.keys(sent)) if (now - sent[k] > 2 * DAY) delete sent[k];
+  storage.set('laundry.sent', JSON.stringify(sent));
+  if (nextAt < Infinity) reminderTimer = setTimeout(checkReminders, Math.min(nextAt - now + 500, 2 ** 31 - 1));
+}
+
+async function showNotification(ev) {
+  const opts = { body: ev.body, tag: ev.key, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png' };
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (reg) await reg.showNotification(t().title, opts);
+    else new Notification(t().title, opts);
+  } catch (err) {
+    console.error(err);
+  }
+  toast(ev.body);
+}
+
 let toastTimer;
 function toast(msg) {
   const el = $('#toast');
@@ -512,6 +684,8 @@ $('#app').addEventListener('click', e => {
     render();
   } else if (a === 'who') {
     openWho();
+  } else if (a === 'notify') {
+    toggleNotify();
   } else if (a === 'machine') {
     state.machine = el.dataset.machine;
     storage.set('laundry.machine', state.machine);
@@ -551,13 +725,15 @@ sheet().addEventListener('click', e => {
     state.me = btn.dataset.person;
     storage.set('laundry.me', state.me);
     closeSheet();
+    askNotifyPermission();
     render();
+    checkReminders();
   }
 });
 sheet().addEventListener('close', () => { refreshSheet = null; sheet().onclick = null; });
 
 // keep "minutes left" fresh
-setInterval(() => { render(); }, 20_000);
+setInterval(() => { render(); checkReminders(); }, 20_000);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     if (state.day < startOfDay(Date.now())) state.day = startOfDay(Date.now());
@@ -574,6 +750,7 @@ store = await createStore(
     state.bookings = list;
     render();
     refreshSheet?.();
+    checkReminders();
   },
   () => toast(t().error),
 );

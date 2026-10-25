@@ -264,3 +264,26 @@ h2 { font-size: 18px; letter-spacing: -.01em; margin: 0 0 12px; }
   .machines { grid-template-columns: 1fr; }
   .section-head { flex-wrap: wrap; }
 }
+
+/* notifications toggle */
+.icon-chip { display: inline-grid; place-items: center; width: 42px; height: 42px; padding: 0; color: var(--muted); }
+.icon-chip.on { color: var(--accent); }
+
+/* set remaining time */
+.remaining { display: grid; gap: 10px; margin-top: 18px; font-weight: 600; font-size: 14px; color: var(--muted); text-align: center; }
+.stepper { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.stepper .chip { width: 56px; height: 48px; font-size: 16px; }
+.stepper input {
+  width: 110px; text-align: center; font: inherit; font-size: 32px; font-weight: 700; color: var(--text);
+  background: var(--surface-2); border: 1.5px solid transparent; border-radius: 14px; padding: 6px; -moz-appearance: textfield;
+}
+.stepper input:focus { outline: none; border-color: var(--accent); }
+.stepper input::-webkit-inner-spin-button, .stepper input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.center { text-align: center; }
+.problems.warn div { color: var(--warn); background: var(--warn-soft); }
+
+/* cancel confirmation */
+.confirm-title { margin: 20px 0 4px; font-size: 17px; }
+.checks { display: grid; gap: 8px; margin-top: 10px; }
+.check { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); font-weight: 600; font-size: 15px; }
+.check input { width: 22px; height: 22px; accent-color: var(--busy); flex: none; }

@@ -10,7 +10,11 @@ Funciona em iPhone e Android — abre-se no browser e pode ser adicionada ao ecr
 - **Horário do dia** (14 dias à frente): toca numa hora livre para reservar.
 - **Usar agora** com um toque, e **"Secar logo a seguir"** reserva a secadora quando acaba a lavagem.
 - Máximo **2 h por reserva** (50 CZK = 2 h, como diz a senhoria), sem sobreposições.
-- **"Já acabei"** liberta a máquina mais cedo; podes cancelar as tuas reservas.
+- **"Já acabei"** liberta a máquina mais cedo.
+- **Editar** as tuas reservas (dia, hora, duração) e **acertar o tempo restante** com os minutos do visor da máquina.
+- Ao **cancelar**, pergunta se queres cancelar também a reserva da outra máquina no mesmo dia.
+- **Notificações** (sino no topo, ligadas por defeito): 10 min antes de começar e 5 min antes de acabar, só para a pessoa escolhida.
+  Funcionam com a app aberta ou em segundo plano há pouco tempo — para lembretes garantidos usa "Adicionar ao calendário".
 - **Adicionar ao calendário** (.ics) com lembrete 10 min antes e no fim do programa.
 - Inglês e português (botão EN/PT), modo escuro automático.
 - Regras da lavandaria (moedas de 50 CZK, portas entreabertas).

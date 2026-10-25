@@ -5,10 +5,11 @@ import { STRINGS } from './i18n.js';
 const MIN = 60_000;
 
 // When a reminder may be shown, in minutes around the booking's start / end.
-// The app is precise; the server runs every ~5 min (often later), so it gets a wider window.
+// The server is triggered every minute by cron-job.org (GitHub's own 5-minute schedule
+// is only a late fallback), so it uses nearly the same window as the app.
 export const WINDOWS = {
   app: { start: [-10, 10], end: [-5, 20] },
-  server: { start: [-15, 10], end: [-10, 20] },
+  server: { start: [-11, 10], end: [-6, 20] },
 };
 
 export const reminderKey = (b, kind) => `${b.id}_${kind}_${kind === 'start' ? b.start : b.end}`;

@@ -48,13 +48,17 @@ Cada push publica sozinho em <https://fabiofaria02.github.io/Laundry/>. Partilha
 
 ## 4. Notificações com a app fechada (Web Push)
 
-O workflow [`reminders.yml`](.github/workflows/reminders.yml) corre de 5 em 5 minutos e envia os avisos
+O workflow [`reminders.yml`](.github/workflows/reminders.yml) envia os avisos
 com [`push/send.mjs`](push/send.mjs). Configuração (uma vez):
 
 1. Firebase → Firestore → **Regras**: cola o [`firestore.rules`](firestore.rules) atualizado → **Publicar**.
 2. GitHub → Settings → **Secrets and variables → Actions → New repository secret**:
    nome `VAPID_PRIVATE_KEY`, valor = chave privada (a pública está em `config.js`).
 3. Actions → **Booking reminders** → **Run workflow** para testar.
+4. O agendamento do próprio GitHub atrasa muito. Para avisos à hora certa, o [cron-job.org](https://cron-job.org)
+   lança o workflow a cada minuto: `POST https://api.github.com/repos/FabioFaria02/Laundry/actions/workflows/reminders.yml/dispatches`
+   com os headers `Authorization: Bearer <token fine-grained com Actions: Read and write>` e
+   `Accept: application/vnd.github+json`, e o body `{"ref":"ccr-b2c91620-hm23d6"}`.
 
 Notas: o GitHub atrasa por vezes estes workflows alguns minutos; desativa-os se o repositório
 não tiver atividade durante 60 dias (basta reativar em Actions). No iPhone só funciona com a app

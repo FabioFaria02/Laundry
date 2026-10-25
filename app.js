@@ -38,6 +38,15 @@ const pad = n => String(n).padStart(2, '0');
 const hhmm = ms => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const startOfDay = ms => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
 const addDays = (ms, n) => { const d = new Date(ms); d.setDate(d.getDate() + n); return d.getTime(); };
+// Wall-clock helpers: days are not always 24 h long (daylight saving changes), so
+// positions and times inside a day come from the local clock, not from ms offsets.
+const atTime = (day, minutes) => { const d = new Date(day); d.setHours(0, minutes, 0, 0); return d.getTime(); };
+const yOf = (ms, day) => {
+  if (ms <= day) return 0;
+  if (ms >= addDays(day, 1)) return 24 * HOUR_PX;
+  const d = new Date(ms);
+  return (d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600) * HOUR_PX;
+};
 const dateValue = ms => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const overlaps = (a, b) => a.start < b.end && b.start < a.end;
 const minutesUntil = ms => Math.max(1, Math.ceil((ms - Date.now()) / MIN));
@@ -153,8 +162,8 @@ function render() {
   } else {
     const isToday = state.day === startOfDay(Date.now());
     const firstBooking = forMachine(state.machine).find(b => b.end > state.day && b.start < addDays(state.day, 1));
-    const focus = isToday ? Date.now() - 1.5 * 3600e3 : firstBooking ? firstBooking.start - 3600e3 : state.day + 8 * 3600e3;
-    tl.scrollTop = Math.max(0, ((focus - state.day) / 3600e3) * HOUR_PX);
+    const focus = isToday ? Date.now() : firstBooking ? firstBooking.start : atTime(state.day, 9 * 60);
+    tl.scrollTop = Math.max(0, yOf(focus, state.day) - 1.5 * HOUR_PX);
     state.scrollTimeline = false;
   }
   const days = $('.days');
@@ -267,15 +276,20 @@ function timelineGrid() {
   const dayEnd = addDays(dayStart, 1);
   const hours = Array.from({ length: 24 }, (_, h) =>
     `<div class="hour" style="top:${h * HOUR_PX}px"><span>${pad(h)}:00</span></div>`).join('');
-  const blocks = forMachine(state.machine)
-    .filter(b => b.end > dayStart && b.start < dayEnd)
+  const dayBookings = forMachine(state.machine).filter(b => b.end > dayStart && b.start < dayEnd);
+  const blocks = dayBookings
     .map(b => {
-      const top = ((Math.max(b.start, dayStart) - dayStart) / 3600e3) * HOUR_PX;
-      const height = Math.max(22, ((Math.min(b.end, dayEnd) - Math.max(b.start, dayStart)) / 3600e3) * HOUR_PX - 2);
+      const top = yOf(b.start, dayStart);
+      const height = Math.max(22, yOf(b.end, dayStart) - top - 2);
       const mine = b.person === state.me;
       const past = b.end <= Date.now();
+      // bookings that overlap (a machine ran longer than planned) are shown side by side
+      const group = dayBookings.filter(x => overlaps(x, b));
+      const cols = group.length;
+      const col = group.indexOf(b);
+      const side = cols > 1 ? `left:calc(62px + (100% - 70px) * ${col} / ${cols});right:auto;width:calc((100% - 70px) / ${cols} - 4px);` : '';
       return `
-        <button class="block ${mine ? 'mine' : ''} ${past ? 'past' : ''}" style="top:${top}px;height:${height}px;--h:${hue(b.person)}"
+        <button class="block ${mine ? 'mine' : ''} ${past ? 'past' : ''}" style="top:${top}px;height:${height}px;${side}--h:${hue(b.person)}"
           data-action="detail" data-id="${esc(b.id)}">
           <b>${esc(b.person)}${mine ? ` (${s.you})` : ''}</b>
           <span>${hhmm(b.start)}–${hhmm(b.end)}</span>
@@ -283,7 +297,7 @@ function timelineGrid() {
     }).join('');
   const now = Date.now();
   const nowLine = now >= dayStart && now < dayEnd
-    ? `<div class="now-line" style="top:${((now - dayStart) / 3600e3) * HOUR_PX}px"><span>${hhmm(now)}</span></div>`
+    ? `<div class="now-line" style="top:${yOf(now, dayStart)}px"><span>${hhmm(now)}</span></div>`
     : '';
   return `<div class="grid" data-action="slot" style="height:${24 * HOUR_PX}px">${hours}${blocks}${nowLine}</div>`;
 }
@@ -335,7 +349,7 @@ function openBook({ machine = state.machine, start = null, edit = null } = {}) {
     ? { machine: edit.machine, start: edit.start, duration: Math.round((edit.end - edit.start) / MIN), dryerAfter: 0 }
     : {
       machine,
-      start: start ?? nextFreeStart(machine, state.day === startOfDay(Date.now()) ? roundUp(Date.now()) : state.day + 9 * 3600e3, state.duration),
+      start: start ?? nextFreeStart(machine, state.day === startOfDay(Date.now()) ? roundUp(Date.now()) : atTime(state.day, 9 * 60), state.duration),
       duration: state.duration,
       dryerAfter: 0,
     };
@@ -800,7 +814,7 @@ $('#app').addEventListener('click', e => {
   } else if (a === 'slot') {
     const y = e.clientY - el.getBoundingClientRect().top;
     const minutes = Math.max(0, Math.min(24 * 60 - 15, Math.floor(((y / HOUR_PX) * 60) / 15) * 15));
-    let start = state.day + minutes * MIN;
+    let start = atTime(state.day, minutes);
     if (start < Date.now() && start + 15 * MIN > Date.now()) start = Math.floor(Date.now() / MIN) * MIN;
     openBook({ machine: state.machine, start });
   }

@@ -513,9 +513,12 @@ function openDetail(id) {
         <div class="sheet-actions stack">
           ${mine && (live || startsSoon) ? `<button type="button" class="btn" data-action="remaining">${s.setRemaining}</button>` : ''}
           ${mine && live ? `<button type="button" class="btn ghost" data-action="finish">${s.finishNow}</button>` : ''}
-          ${mine && !live && !done ? `<button type="button" class="btn ghost" data-action="edit">${s.edit}</button>` : ''}
+          ${mine && !done ? `
+            <div class="btn-row">
+              <button type="button" class="btn ghost" data-action="edit">${s.edit}</button>
+              <button type="button" class="btn danger" data-action="delete">${s.deleteBooking}</button>
+            </div>` : ''}
           ${!done ? `<button type="button" class="btn ghost" data-action="ics">${ICONS.cal}<span>${s.addCal}</span></button>` : ''}
-          ${mine && !live && !done ? `<button type="button" class="btn danger" data-action="delete">${s.cancelBooking}</button>` : ''}
           <button type="button" class="btn ghost" data-action="close">${s.close}</button>
         </div>`;
     }

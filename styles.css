@@ -289,3 +289,7 @@ h2 { font-size: 18px; letter-spacing: -.01em; margin: 0 0 12px; }
 .check input { width: 22px; height: 22px; accent-color: var(--busy); flex: none; }
 .new-range { display: grid; justify-items: center; gap: 2px; margin: 14px 0 4px; text-align: center; }
 .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.custom-duration { margin-top: 12px; }
+.custom-duration input { width: 96px; font-size: 26px; }
+.custom-duration .unit { color: var(--muted); font-weight: 600; margin-left: -6px; }
+.btn.fit { width: 100%; margin-top: 10px; background: var(--accent-soft); color: var(--accent); }

@@ -316,6 +316,18 @@ function openWho() {
     </div>`);
 }
 
+const clampDuration = d => Math.min(MAX_MIN, Math.max(5, Math.round(d)));
+
+// If `slot` only collides with bookings that start after it, how long can it be to end
+// exactly when the first of them starts?
+function fitBefore(machine, slot, ignoreId) {
+  const hits = conflictsFor(machine, slot, ignoreId);
+  if (!hits.length || hits.some(c => c.start <= slot.start)) return null;
+  const until = Math.min(...hits.map(c => c.start));
+  const minutes = Math.floor((until - slot.start) / MIN);
+  return minutes >= 5 ? { until, minutes } : null;
+}
+
 function openBook({ machine = state.machine, start = null, edit = null } = {}) {
   if (!state.me) return openWho();
   const s = t();
@@ -343,9 +355,14 @@ function openBook({ machine = state.machine, start = null, edit = null } = {}) {
         problems.push(`${s.dryer}: ${s.conflict} ${esc(c.person)} (${hhmm(c.start)}–${hhmm(c.end)})`);
       }
     }
-    const durations = [...new Set([...DURATIONS, form.duration])].sort((x, y) => x - y);
+    // when only the end runs into the next booking, offer to stop right where it starts
+    const fits = [
+      ['f-fit', fitBefore(form.machine, main, edit?.id)],
+      ['f-fit-dryer', dryerSlot && fitBefore('dryer', dryerSlot)],
+    ].filter(([, f]) => f);
+    const durations = [...new Set([...DURATIONS, ...(form.custom ? [] : [form.duration])])].sort((x, y) => x - y);
     const chips = (list, value, action) =>
-      list.map(d => `<button type="button" class="chip ${d === value ? 'active' : ''}" data-action="${action}" data-value="${d}">${d ? fmtDur(d) : s.no}</button>`).join('');
+      list.map(d => `<button type="button" class="chip ${d === value && !(action === 'f-duration' && form.custom) ? 'active' : ''}" data-action="${action}" data-value="${d}">${d ? fmtDur(d) : s.no}</button>`).join('');
 
     openSheet(`
       <h2>${edit ? s.editBooking : s.bookSlot}</h2>
@@ -364,10 +381,18 @@ function openBook({ machine = state.machine, start = null, edit = null } = {}) {
         </label>
       </div>
       <div class="field-label">${s.duration}</div>
-      <div class="chips">${chips(durations, form.duration, 'f-duration')}</div>
+      <div class="chips">${chips(durations, form.duration, 'f-duration')}
+        <button type="button" class="chip ${form.custom ? 'active' : ''}" data-action="f-custom">${s.custom}</button></div>
+      ${form.custom ? `
+        <div class="stepper custom-duration">
+          <button type="button" class="chip" data-action="f-step" data-value="-5">−5</button>
+          <input type="number" inputmode="numeric" min="5" max="${MAX_MIN}" data-field="duration" value="${form.duration}">
+          <span class="unit">min</span>
+          <button type="button" class="chip" data-action="f-step" data-value="5">+5</button>
+        </div>` : ''}
       ${form.machine === 'washer' && !edit ? `
         <div class="field-label">${s.dryerAfter}</div>
-        <div class="chips">${chips([0, 60, 90, 120], form.dryerAfter, 'f-dryer')}</div>` : ''}
+        <div class="chips">${chips([...new Set([0, 60, 90, 120, form.dryerAfter])].sort((x, y) => x - y), form.dryerAfter, 'f-dryer')}</div>` : ''}
       <div class="summary">
         ${avatar(state.me, 'sm')}
         <div>
@@ -376,6 +401,10 @@ function openBook({ machine = state.machine, start = null, edit = null } = {}) {
         </div>
       </div>
       ${problems.length ? `<div class="problems">${problems.map(p => `<div>${ICONS.alert}<span>${p}</span></div>`).join('')}</div>` : ''}
+      ${fits.map(([action, f]) => `
+        <button type="button" class="btn fit" data-action="${action}" data-value="${f.minutes}">
+          ${esc((action === 'f-fit-dryer' ? `${s.dryer}: ` : '') + s.fitUntil(hhmm(f.until), fmtDur(f.minutes)))}
+        </button>`).join('')}
       <div class="sheet-actions">
         <button type="button" class="btn ghost" data-action="close">${s.cancel}</button>
         <button type="button" class="btn" data-action="f-submit" ${problems.length ? 'disabled' : ''}>${edit ? s.saveChanges : s.confirm}</button>
@@ -398,13 +427,22 @@ function openBook({ machine = state.machine, start = null, edit = null } = {}) {
       form.start = d.getTime();
       draw();
     };
+    const durInput = el.querySelector('[data-field="duration"]');
+    if (durInput) {
+      durInput.oninput = () => { if (Number(durInput.value) >= 1) form.duration = clampDuration(Number(durInput.value)); };
+      // deferred: the change can fire on blur while the sheet is being redrawn
+      durInput.onchange = () => setTimeout(draw);
+    }
     el.onclick = async e => {
       const btn = e.target.closest('[data-action]');
       if (!btn) return;
       const a = btn.dataset.action;
       if (a === 'f-machine') { form.machine = btn.dataset.value; if (form.machine === 'dryer') form.dryerAfter = 0; draw(); }
-      if (a === 'f-duration') { form.duration = Math.min(MAX_MIN, Number(btn.dataset.value)); draw(); }
-      if (a === 'f-dryer') { form.dryerAfter = Number(btn.dataset.value); draw(); }
+      if (a === 'f-duration') { form.duration = Math.min(MAX_MIN, Number(btn.dataset.value)); form.custom = false; draw(); }
+      if (a === 'f-custom') { form.custom = !form.custom; draw(); }
+      if (a === 'f-step') { form.duration = clampDuration(form.duration + Number(btn.dataset.value)); draw(); }
+      if (a === 'f-fit') { form.duration = Number(btn.dataset.value); draw(); }
+      if (a === 'f-dryer' || a === 'f-fit-dryer') { form.dryerAfter = Number(btn.dataset.value); draw(); }
       if (a === 'close') closeSheet();
       if (a === 'f-submit') {
         btn.disabled = true;
@@ -546,7 +584,7 @@ function openDetail(id) {
         const v = Math.round(Number(input.value));
         if (v >= 1) remaining = Math.min(MAX_MIN, v);
       };
-      input.onchange = () => draw();
+      input.onchange = () => setTimeout(draw);
     }
 
     sheet().onclick = async e => {

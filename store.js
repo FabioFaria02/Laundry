@@ -37,7 +37,9 @@ async function firebaseStore(onChange, onError) {
   return {
     mode: 'cloud',
     add: b => fs.addDoc(col, { ...b, createdAt: Date.now() }),
-    finish: (id, end) => fs.updateDoc(fs.doc(db, 'bookings', id), { end }),
+    // `done` stops the "finished" reminder; older rules only accept `end`, so fall back to that
+    finish: (id, end) => fs.updateDoc(fs.doc(db, 'bookings', id), { end, done: true })
+      .catch(() => fs.updateDoc(fs.doc(db, 'bookings', id), { end })),
     remove: id => fs.deleteDoc(fs.doc(db, 'bookings', id)),
     // edit = delete + create in one atomic batch (the rules only allow shortening `end` in place)
     replace: (id, b) => {
@@ -46,6 +48,8 @@ async function firebaseStore(onChange, onError) {
       batch.set(fs.doc(col), { ...b, createdAt: Date.now() });
       return batch.commit();
     },
+    savePushSub: (id, data) => fs.setDoc(fs.doc(db, 'pushSubs', id), data),
+    deletePushSub: id => fs.deleteDoc(fs.doc(db, 'pushSubs', id)),
   };
 }
 
@@ -66,8 +70,10 @@ function localStore(onChange) {
   return {
     mode: 'local',
     add: async b => write([...read(), { ...b, id: newId(), createdAt: Date.now() }]),
-    finish: async (id, end) => write(read().map(b => (b.id === id ? { ...b, end } : b))),
+    finish: async (id, end) => write(read().map(b => (b.id === id ? { ...b, end, done: true } : b))),
     remove: async id => write(read().filter(b => b.id !== id)),
     replace: async (id, b) => write([...read().filter(x => x.id !== id), { ...b, id: newId(), createdAt: Date.now() }]),
+    savePushSub: async () => {},
+    deletePushSub: async () => {},
   };
 }

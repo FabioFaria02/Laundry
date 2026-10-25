@@ -1,0 +1,12 @@
+{
+  "name": "laundry-push",
+  "private": true,
+  "type": "module",
+  "description": "Sends booking reminders as Web Push notifications (run by GitHub Actions every 5 minutes).",
+  "scripts": {
+    "send": "node send.mjs"
+  },
+  "dependencies": {
+    "web-push": "3.6.7"
+  }
+}

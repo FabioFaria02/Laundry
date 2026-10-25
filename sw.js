@@ -1,6 +1,6 @@
 // Network-first for the app shell so updates show up right away; cache is only an offline fallback.
-const CACHE = 'laundry-v6';
-const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'store.js', 'i18n.js', 'config.js', 'manifest.webmanifest', 'icons/icon.svg'];
+const CACHE = 'laundry-v7';
+const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'store.js', 'i18n.js', 'reminders.js', 'config.js', 'manifest.webmanifest', 'icons/icon.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -30,6 +30,19 @@ self.addEventListener('fetch', e => {
       })
       .catch(() => caches.match(e.request)),
   );
+});
+
+// reminders pushed by the GitHub Action (push/send.mjs) while the app is closed
+self.addEventListener('push', e => {
+  let msg = {};
+  try { msg = e.data.json(); } catch { msg = { body: e.data?.text() }; }
+  e.waitUntil(self.registration.showNotification(msg.title || 'Money Laundry', {
+    body: msg.body || '',
+    tag: msg.tag,
+    icon: 'icons/icon-192.png',
+    badge: 'icons/badge-96.png',
+    vibrate: [200, 100, 200],
+  }));
 });
 
 // tapping a reminder opens (or focuses) the app

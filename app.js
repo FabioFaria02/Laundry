@@ -1,5 +1,7 @@
 import { createStore } from './store.js';
 import { STRINGS } from './i18n.js';
+import { VAPID_PUBLIC_KEY } from './config.js';
+import { WINDOWS, dueReminders, reminderMessage } from './reminders.js';
 
 const PEOPLE = [
   'Fábio', 'Alina', 'Filipa', 'Francisco', 'Inês', 'Laura',
@@ -441,6 +443,15 @@ function openBook({ machine = state.machine, start = null, edit = null } = {}) {
   draw();
 }
 
+// "Set remaining time": keep the start (or move it to now if started early) and
+// end when the machine display says it will.
+function adjusted(b, remaining) {
+  const now = Date.now();
+  const end = Math.round((now + remaining * MIN) / MIN) * MIN;
+  const start = Math.max(Math.min(b.start, Math.floor(now / MIN) * MIN), end - 4 * 60 * MIN);
+  return { start, end };
+}
+
 function openDetail(id) {
   const s = t();
   let mode = 'view'; // 'view' | 'remaining' | 'cancel'
@@ -462,8 +473,7 @@ function openDetail(id) {
     let body;
     if (mode === 'remaining') {
       if (remaining === null) remaining = live ? minutesUntil(b.end) : Math.round((b.end - b.start) / MIN);
-      const end = Math.round((now + remaining * MIN) / MIN) * MIN;
-      const start = Math.max(Math.min(b.start, now), end - MAX_MIN * MIN);
+      const { start, end } = adjusted(b, remaining);
       const hits = conflictsFor(b.machine, { start, end }, b.id);
       body = `
         <label class="remaining">
@@ -474,7 +484,10 @@ function openDetail(id) {
             <button type="button" class="chip" data-action="r-step" data-value="5">+5</button>
           </div>
         </label>
-        <p class="muted center">${esc(s.newEnd(hhmm(end)))}</p>
+        <div class="new-range">
+          <b>${esc(s.newRange(`${hhmm(start)}–${hhmm(end)}`))}</b>
+          <span class="muted tiny">${esc(s.wasRange(`${hhmm(b.start)}–${hhmm(b.end)}`))}</span>
+        </div>
         ${hits.length ? `<div class="problems warn">${hits.map(c => `<div>${ICONS.alert}<span>${s.conflict} ${esc(c.person)} (${hhmm(c.start)}–${hhmm(c.end)}) — ${s.tellThem}</span></div>`).join('')}</div>` : ''}
         <div class="sheet-actions">
           <button type="button" class="btn ghost" data-action="back">${s.back}</button>
@@ -555,8 +568,7 @@ function openDetail(id) {
           toast(s.cancelled);
         }
         if (a === 'r-save') {
-          const end = Math.round((Date.now() + remaining * MIN) / MIN) * MIN;
-          const start = Math.max(Math.min(b.start, Date.now()), end - MAX_MIN * MIN);
+          const { start, end } = adjusted(b, remaining);
           await store.replace(b.id, { machine: b.machine, person: b.person, start, end });
           toast(s.updated);
         }
@@ -596,15 +608,17 @@ function downloadIcs(b) {
 }
 
 // ---------- reminders ----------
-// Local notifications for the selected person only. They fire while the app is open
-// (or recently in the background); there is no push server.
+// Two layers, same messages (reminders.js):
+//  * local notifications, precise, while the app is open or was just backgrounded;
+//  * Web Push sent by the GitHub Action every ~5 min, which also reaches closed apps.
+// Both use the same tag, so a phone shows one notification per reminder.
 const NOTIFY_SUPPORTED = 'Notification' in window;
 const notifyActive = () => state.notify && NOTIFY_SUPPORTED && Notification.permission !== 'denied';
 let reminderTimer;
 
 function askNotifyPermission() {
   if (state.notify && NOTIFY_SUPPORTED && Notification.permission === 'default') {
-    Notification.requestPermission().then(() => { render(); checkReminders(); }).catch(() => {});
+    Notification.requestPermission().then(() => { render(); checkReminders(); syncPush(); }).catch(() => {});
   }
 }
 
@@ -618,17 +632,7 @@ function toggleNotify() {
   askNotifyPermission();
   render();
   checkReminders();
-}
-
-function reminderEvents() {
-  return state.bookings
-    .filter(b => b.person === state.me && b.end > Date.now() - MIN)
-    .flatMap(b => [
-      { key: `${b.id}:start:${b.start}`, at: b.start - 10 * MIN, until: b.start, body: t().startSoon(machineName(b.machine)), createdAt: b.createdAt },
-      { key: `${b.id}:end:${b.end}`, at: b.end - 5 * MIN, until: b.end, body: t().endSoon(machineName(b.machine)), createdAt: b.createdAt },
-    ])
-    // skip reminders whose moment had already passed when the booking was made (e.g. "Use now")
-    .filter(ev => !ev.createdAt || ev.createdAt < ev.at);
+  syncPush();
 }
 
 function checkReminders() {
@@ -638,13 +642,15 @@ function checkReminders() {
   try { sent = JSON.parse(storage.get('laundry.sent')) || {}; } catch { sent = {}; }
   const now = Date.now();
   let nextAt = Infinity;
-  for (const ev of reminderEvents()) {
-    if (sent[ev.key]) continue;
-    if (now >= ev.at && now < ev.until) {
-      sent[ev.key] = now;
-      showNotification(ev);
-    } else if (ev.at > now) {
-      nextAt = Math.min(nextAt, ev.at);
+  for (const b of state.bookings.filter(x => x.person === state.me && x.end > now - DAY)) {
+    for (const kind of dueReminders(b, now, WINDOWS.app)) {
+      const msg = reminderMessage(b, kind, now, state.lang);
+      if (sent[msg.tag]) continue;
+      sent[msg.tag] = now;
+      showNotification(msg);
+    }
+    for (const at of [b.start + WINDOWS.app.start[0] * MIN, b.end + WINDOWS.app.end[0] * MIN]) {
+      if (at > now) nextAt = Math.min(nextAt, at);
     }
   }
   for (const k of Object.keys(sent)) if (now - sent[k] > 2 * DAY) delete sent[k];
@@ -652,16 +658,56 @@ function checkReminders() {
   if (nextAt < Infinity) reminderTimer = setTimeout(checkReminders, Math.min(nextAt - now + 500, 2 ** 31 - 1));
 }
 
-async function showNotification(ev) {
-  const opts = { body: ev.body, tag: ev.key, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png' };
+async function showNotification(msg) {
+  const opts = { body: msg.body, tag: msg.tag, icon: 'icons/icon-192.png', badge: 'icons/badge-96.png' };
   try {
     const reg = await navigator.serviceWorker?.getRegistration();
-    if (reg) await reg.showNotification(t().title, opts);
-    else new Notification(t().title, opts);
+    if (reg) await reg.showNotification(msg.title, opts);
+    else new Notification(msg.title, opts);
   } catch (err) {
     console.error(err);
   }
-  toast(ev.body);
+  toast(msg.body);
+}
+
+// Keep this phone's Web Push subscription in Firestore in line with the bell and the chosen name.
+async function syncPush() {
+  try {
+    if (!store || store.mode !== 'cloud' || !('PushManager' in window)) return;
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (!reg) return;
+    let sub = await reg.pushManager.getSubscription();
+    const wanted = state.me && state.notify && NOTIFY_SUPPORTED && Notification.permission === 'granted';
+    if (!wanted) {
+      if (sub) {
+        await store.deletePushSub(await subId(sub.endpoint));
+        await sub.unsubscribe();
+      }
+      storage.set('laundry.pushSig', '');
+      return;
+    }
+    sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlToBytes(VAPID_PUBLIC_KEY) });
+    const { endpoint, keys } = sub.toJSON();
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const sig = [state.me, state.lang, tz, endpoint].join('|');
+    if (storage.get('laundry.pushSig') === sig) return;
+    await store.savePushSub(await subId(endpoint), {
+      person: state.me, lang: state.lang, tz, endpoint, p256dh: keys.p256dh, auth: keys.auth, updatedAt: Date.now(),
+    });
+    storage.set('laundry.pushSig', sig);
+  } catch (err) {
+    console.error('push subscription failed', err);
+  }
+}
+
+async function subId(endpoint) {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(endpoint));
+  return [...new Uint8Array(hash)].map(x => x.toString(16).padStart(2, '0')).join('').slice(0, 40);
+}
+
+function b64urlToBytes(b64url) {
+  const b64 = (b64url + '='.repeat((4 - (b64url.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
 }
 
 let toastTimer;
@@ -682,6 +728,7 @@ $('#app').addEventListener('click', e => {
     state.lang = state.lang === 'pt' ? 'en' : 'pt';
     storage.set('laundry.lang', state.lang);
     render();
+    syncPush();
   } else if (a === 'who') {
     openWho();
   } else if (a === 'notify') {
@@ -728,6 +775,7 @@ sheet().addEventListener('click', e => {
     askNotifyPermission();
     render();
     checkReminders();
+    syncPush();
   }
 });
 sheet().addEventListener('close', () => { refreshSheet = null; sheet().onclick = null; });
@@ -758,5 +806,5 @@ state.mode = store.mode;
 render();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.register('sw.js').then(() => syncPush()).catch(() => {});
 }

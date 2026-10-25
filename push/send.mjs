@@ -52,12 +52,20 @@ async function claim(key, now) {
   return res.status !== 409;
 }
 
+// Not set up yet: finish quietly instead of failing (and e-mailing) every 5 minutes.
+if (!DRY_RUN && !process.env.VAPID_PRIVATE_KEY) {
+  console.log('VAPID_PRIVATE_KEY secret is not set yet — nothing to do (see README, section 4).');
+  process.exit(0);
+}
 const now = Date.now();
-const [bookings, subs] = await Promise.all([activeBookings(now), subscriptions()]);
+const subs = await subscriptions().catch(err => {
+  console.log('Cannot read pushSubs — publish the updated firestore.rules (README, section 4).', err.message);
+  process.exit(0);
+});
+const bookings = await activeBookings(now);
 console.log(`${bookings.length} active bookings, ${subs.length} subscribed phones`);
 
 if (!DRY_RUN) {
-  if (!process.env.VAPID_PRIVATE_KEY) throw new Error('VAPID_PRIVATE_KEY secret is missing');
   webpush.setVapidDetails('https://fabiofaria02.github.io/Laundry/', VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
 }
 

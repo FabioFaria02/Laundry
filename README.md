@@ -68,6 +68,12 @@ Notas: o GitHub atrasa por vezes estes workflows alguns minutos; desativa-os se 
 não tiver atividade durante 60 dias (basta reativar em Actions). No iPhone só funciona com a app
 no ecrã principal (iOS 16.4+).
 
+## 5. Publicar as regras automaticamente
+
+O workflow [`rules.yml`](.github/workflows/rules.yml) publica o `firestore.rules` sempre que muda.
+Precisa do secret `FIREBASE_SERVICE_ACCOUNT`: a chave JSON de uma conta de serviço que só tem o papel
+**Firebase Rules Admin** (Google Cloud → IAM → Service accounts). Sem o secret, publica-se à mão como na secção 4.
+
 ## Pessoas
 
 Fábio, Alina, Filipa, Francisco, Inês, Laura, Anna R., Anna N., Aslı, Charlélie, Clara, Maria, Martyna, Mimi, Ourania, Sudenaz, Umer, Veve.

@@ -17,7 +17,7 @@ Funciona em iPhone e Android — abre-se no browser e pode ser adicionada ao ecr
 - **Notificações** (sino no topo, ligadas por defeito), só para a pessoa escolhida no telemóvel:
   ~10 min antes de começar e ~5–10 min antes de acabar. Com a app fechada chegam por push (ver secção 4).
 - **Ajuda** (botão ? no topo): instalar a app (popup do Chrome no Android, passos no iPhone) e ativar notificações.
-- **Perfil**: foto da galeria ou emoji em vez da inicial (em "Quem és tu?"); o sino mostra quem tem notificações.
+- **Perfil**: mudar o nome, foto da galeria ou emoji em vez da inicial (em "Quem és tu?"); o sino mostra quem tem notificações.
 - **Avisar para tirar a roupa**: numa reserva já terminada de outra pessoa (com notificações), envia-lhe um push.
 - **Melhores horas**: mapa das horas mais ocupadas nas últimas 4 semanas.
 - **Adicionar ao calendário** (.ics) com lembrete 10 min antes e no fim do programa.

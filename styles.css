@@ -365,3 +365,14 @@ h2 { font-size: 18px; letter-spacing: -.01em; margin: 0 0 12px; }
   .topbar .chip { padding: 6px 8px; font-size: 13px; }
   .topbar .me-btn .avatar { width: 34px; height: 34px; font-size: 15px; }
 }
+
+/* change name */
+.profile-name { display: inline-flex; align-items: center; gap: 4px; font-size: 17px; }
+.edit-name { font-size: 15px; padding: 4px 6px; border-radius: 8px; line-height: 1; opacity: .85; }
+.edit-name:active { background: var(--surface); }
+.name-input {
+  flex: 1; min-width: 0; font: inherit; font-size: 20px; font-weight: 650; color: var(--text); background: var(--surface);
+  border: 1.5px solid transparent; border-radius: 12px; padding: 11px 12px;
+}
+.name-input:focus { outline: none; border-color: var(--accent); }
+.name-hint { margin: 10px 2px 0; }

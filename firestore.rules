@@ -32,10 +32,12 @@ service cloud.firestore {
         && request.resource.data.endpoint.matches('https://.*');
     }
 
-    // profile picture (small JPEG data URL) or emoji, one document per name
+    // display name, profile picture (small JPEG data URL) or emoji, one document per person
     match /profiles/{person} {
       allow read, delete: if true;
-      allow create, update: if request.resource.data.keys().hasOnly(['emoji', 'photo', 'updatedAt'])
+      allow create, update: if request.resource.data.keys().hasOnly(['name', 'emoji', 'photo', 'updatedAt'])
+        && (!('name' in request.resource.data) || (request.resource.data.name is string
+          && request.resource.data.name.size() >= 1 && request.resource.data.name.size() <= 24))
         && (!('emoji' in request.resource.data) || (request.resource.data.emoji is string && request.resource.data.emoji.size() <= 16))
         && (!('photo' in request.resource.data) || (request.resource.data.photo is string
           && request.resource.data.photo.size() < 80000

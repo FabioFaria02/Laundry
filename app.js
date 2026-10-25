@@ -54,12 +54,15 @@ const minutesUntil = ms => Math.max(1, Math.ceil((ms - Date.now()) / MIN));
 const hue = name => [...name].reduce((h, c) => (h * 31 + c.codePointAt(0)) % 360, 7);
 const fmtDur = d => (d < 60 ? `${d} min` : `${Math.floor(d / 60)} h${d % 60 ? ` ${pad(d % 60)}` : ''}`);
 const machineName = m => (m === 'washer' ? t().washer : t().dryer);
+// A person is identified by the name in PEOPLE (bookings, reminders and profiles use it);
+// the name they pick for themselves only changes how it is shown.
+const displayName = person => state.profiles[person]?.name || person;
 const PHOTO_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 const avatar = (name, cls = '') => {
   const p = state.profiles[name] || {};
   if (p.photo && PHOTO_RE.test(p.photo)) return `<span class="avatar photo ${cls}" style="background-image:url('${p.photo}')"></span>`;
   if (p.emoji) return `<span class="avatar emoji ${cls}" style="--h:${hue(name)}">${esc(p.emoji)}</span>`;
-  return `<span class="avatar ${cls}" style="--h:${hue(name)}">${esc([...name][0] || '?')}</span>`;
+  return `<span class="avatar ${cls}" style="--h:${hue(name)}">${esc([...displayName(name)][0] || '?')}</span>`;
 };
 
 // ---------- state ----------
@@ -119,7 +122,7 @@ function render() {
     <header class="topbar">
       <div>
         <h1>${s.title}</h1>
-        <p class="muted">${state.me ? esc(s.hi(state.me)) : ''}</p>
+        <p class="muted">${state.me ? esc(s.hi(displayName(state.me))) : ''}</p>
       </div>
       <div class="topbar-actions">
         <button class="chip icon-chip" data-action="help" aria-label="${s.help}">${ICONS.help}</button>
@@ -195,7 +198,7 @@ function machineCard(m) {
     const pct = Math.min(100, Math.max(0, ((Date.now() - cur.start) / (cur.end - cur.start)) * 100));
     body = `
       <div class="status busy"><span class="dot"></span>${s.inUse}</div>
-      <div class="who">${avatar(cur.person, 'sm')}<span>${esc(cur.person)}${cur.person === state.me ? ` (${s.you})` : ''}</span></div>
+      <div class="who">${avatar(cur.person, 'sm')}<span>${esc(displayName(cur.person))}${cur.person === state.me ? ` (${s.you})` : ''}</span></div>
       <div class="big">${esc(s.minLeft(minutesUntil(cur.end)))}</div>
       <div class="progress"><span style="width:${pct}%"></span></div>`;
     if (cur.person === state.me) {
@@ -208,7 +211,7 @@ function machineCard(m) {
     action = `<button class="btn small" data-action="now" data-machine="${m}">${s.useNow}</button>`;
   }
   const nextLine = next
-    ? `<div class="next muted">${s.next}: ${esc(next.person)} · ${startOfDay(next.start) === startOfDay(Date.now()) ? hhmm(next.start) : `${esc(dayLabel(next.start))} ${hhmm(next.start)}`}</div>`
+    ? `<div class="next muted">${s.next}: ${esc(displayName(next.person))} · ${startOfDay(next.start) === startOfDay(Date.now()) ? hhmm(next.start) : `${esc(dayLabel(next.start))} ${hhmm(next.start)}`}</div>`
     : `<div class="next muted">${s.freeAllDay}</div>`;
   return `
     <article class="card machine ${cur ? 'is-busy' : 'is-free'} ${state.machine === m ? 'selected' : ''}" data-action="machine" data-machine="${m}">
@@ -303,7 +306,7 @@ function bookingRow(b, showPerson = false) {
       <button class="row" data-action="detail" data-id="${esc(b.id)}">
         ${showPerson ? avatar(b.person, 'sm') : `<span class="machine-icon sm">${ICONS[b.machine]}</span>`}
         <span class="row-main">
-          <span class="row-title">${showPerson ? esc(b.person) : (b.machine === 'washer' ? s.washer : s.dryer)}
+          <span class="row-title">${showPerson ? esc(displayName(b.person)) : (b.machine === 'washer' ? s.washer : s.dryer)}
             ${showPerson ? `<span class="muted"> · ${b.machine === 'washer' ? s.washerShort : s.dryerShort}</span>` : ''}</span>
           <span class="muted tiny">${esc(dayLabel(b.start))} · ${hhmm(b.start)}–${hhmm(b.end)}</span>
         </span>
@@ -353,7 +356,7 @@ function timelineGrid() {
       return `
         <button class="block ${mine ? 'mine' : ''} ${past ? 'past' : ''}" style="top:${top}px;height:${height}px;${side}--h:${hue(b.person)}"
           data-action="detail" data-id="${esc(b.id)}">
-          <b>${esc(b.person)}${mine ? ` (${s.you})` : ''}</b>
+          <b>${esc(displayName(b.person))}${mine ? ` (${s.you})` : ''}</b>
           <span>${hhmm(b.start)}–${hhmm(b.end)}</span>
         </button>`;
     }).join('');
@@ -379,29 +382,46 @@ function closeSheet() {
   if (sheet().open) sheet().close();
 }
 
+const NAME_MAX = 20;
 const EMOJIS = ['🧺', '👕', '🧦', '🫧', '🌸', '🌻', '🍀', '🌈', '⭐', '🔥', '⚡', '🌙', '☀️', '🌊', '🐱', '🐶',
   '🦊', '🐼', '🐸', '🦄', '🐝', '🦋', '🐙', '🐢', '🍕', '🍓', '🥑', '🍩', '🍉', '☕', '🎧', '🎮',
   '⚽', '🏀', '🎸', '📚', '✈️', '🚲', '💎', '👑', '😎', '🤓', '😺', '👻', '🤖', '💀', '🧚', '🦖'];
 
 function openWho() {
   const s = t();
-  let mode = 'list'; // 'list' | 'emoji'
+  let mode = 'list'; // 'list' | 'emoji' | 'name'
   const draw = () => {
     const mine = state.me && state.profiles[state.me];
     const profile = state.me ? `
       <div class="profile-row">
         ${avatar(state.me, 'lg')}
         <div class="profile-main">
-          <b>${esc(state.me)}</b>
+          <b class="profile-name">${esc(displayName(state.me))}
+            <button type="button" class="edit-name" data-action="p-name" aria-label="${s.changeName}">✏️</button></b>
           <div class="profile-actions">
             <button type="button" class="chip" data-action="p-photo">📷 ${s.photo}</button>
             <button type="button" class="chip" data-action="p-emoji">😀 ${s.emoji}</button>
-            ${mine ? `<button type="button" class="chip" data-action="p-remove">${s.removeAvatar}</button>` : ''}
+            ${mine && (mine.photo || mine.emoji) ? `<button type="button" class="chip" data-action="p-remove">${s.removeAvatar}</button>` : ''}
           </div>
         </div>
         <input type="file" accept="image/*" data-field="photo" hidden>
       </div>` : '';
-    if (mode === 'emoji') {
+    if (mode === 'name') {
+      openSheet(`
+        <h2>${s.changeName}</h2>
+        <div class="profile-row">${avatar(state.me, 'lg')}
+          <input type="text" class="name-input" data-field="name" maxlength="${NAME_MAX}" value="${esc(displayName(state.me))}"
+            placeholder="${esc(state.me)}" autocomplete="off" autocapitalize="words"></div>
+        <p class="muted tiny name-hint">${s.nameHint}</p>
+        <div class="sheet-actions">
+          <button type="button" class="btn ghost" data-action="p-back">${s.back}</button>
+          <button type="button" class="btn" data-action="p-name-save">${s.saveChanges}</button>
+        </div>
+        ${state.profiles[state.me]?.name ? `<div class="sheet-actions stack"><button type="button" class="btn ghost" data-action="p-name-reset">${esc(s.resetName(state.me))}</button></div>` : ''}`);
+      const input = sheet().querySelector('[data-field="name"]');
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    } else if (mode === 'emoji') {
       openSheet(`
         <h2>${s.pickEmoji}</h2>
         <div class="emoji-grid">${EMOJIS.map(e => `<button type="button" data-action="p-set-emoji" data-value="${e}">${e}</button>`).join('')}</div>
@@ -420,8 +440,8 @@ function openWho() {
           ${PEOPLE.map(p => `
             <button class="person ${p === state.me ? 'active' : ''}" data-action="pick" data-person="${esc(p)}">
               <span class="av-wrap">${avatar(p)}${state.subscribers.has(p)
-                ? `<i class="bell-badge" title="${esc(p)} ${s.hasNotif}">${ICONS.bell}</i>` : ''}</span>
-              <span>${esc(p)}</span>
+                ? `<i class="bell-badge" title="${esc(displayName(p))} ${s.hasNotif}">${ICONS.bell}</i>` : ''}</span>
+              <span>${esc(displayName(p))}</span>
             </button>`).join('')}
         </div>`, draw);
     }
@@ -432,7 +452,7 @@ function openWho() {
         const f = file.files?.[0];
         if (!f) return;
         try {
-          await store.saveProfile(state.me, { photo: await photoToDataUrl(f) });
+          await updateProfile(state.me, { photo: await photoToDataUrl(f) });
           toast(s.saved);
         } catch (err) {
           console.error(err);
@@ -447,14 +467,32 @@ function openWho() {
       if (a === 'p-photo') return file?.click();
       if (a === 'p-emoji') { mode = 'emoji'; return draw(); }
       if (a === 'p-back') { mode = 'list'; return draw(); }
+      if (a === 'p-name') { mode = 'name'; return draw(); }
+      if (a === 'p-name-reset' || a === 'p-name-save') {
+        const typed = a === 'p-name-reset' ? '' : sheet().querySelector('[data-field="name"]').value.replace(/\s+/g, ' ').trim();
+        const name = typed === state.me ? '' : typed;
+        if (name && PEOPLE.some(p => p !== state.me && displayName(p).toLowerCase() === name.toLowerCase())) {
+          return toast(s.nameTaken(name));
+        }
+        try {
+          await updateProfile(state.me, { name: name || null });
+          mode = 'list';
+          toast(s.saved);
+          draw();
+        } catch (err) {
+          console.error(err);
+          toast(s.error);
+        }
+        return;
+      }
       let emoji = null;
       if (a === 'p-set-emoji') emoji = btn.dataset.value;
       if (a === 'p-typed') emoji = sheet().querySelector('[data-field="emoji"]').value.trim();
       try {
-        if (a === 'p-remove') { await store.deleteProfile(state.me); toast(s.saved); }
+        if (a === 'p-remove') { await updateProfile(state.me, { photo: null, emoji: null }); toast(s.saved); }
         if (emoji) {
           mode = 'list';
-          await store.saveProfile(state.me, { emoji: [...emoji].slice(0, 4).join('') });
+          await updateProfile(state.me, { emoji: [...emoji].slice(0, 4).join('') });
           toast(s.saved);
           draw();
         }
@@ -465,6 +503,18 @@ function openWho() {
     };
   };
   draw();
+}
+
+// Saves the profile of `person`: `changes` are merged into what is stored; a photo replaces an
+// emoji and vice versa, and empty values are dropped (an empty profile is deleted).
+async function updateProfile(person, changes) {
+  const next = { ...(state.profiles[person] || {}), ...changes };
+  delete next.updatedAt;
+  if (changes.photo) delete next.emoji;
+  if (changes.emoji) delete next.photo;
+  for (const k of Object.keys(next)) if (!next[k]) delete next[k];
+  if (Object.keys(next).length) await store.saveProfile(person, next);
+  else await store.deleteProfile(person);
 }
 
 // Square-crop and shrink a gallery photo to a small JPEG, so it fits in the shared database.
@@ -511,11 +561,11 @@ function openBook({ machine = state.machine, start = null, edit = null } = {}) {
     const startChanged = !edit || form.start !== edit.start;
     if (startChanged && form.start < Date.now() - 5 * MIN) problems.push(s.past);
     for (const c of conflictsFor(form.machine, main, edit?.id)) {
-      problems.push(`${s.conflict} ${esc(c.person)} (${hhmm(c.start)}–${hhmm(c.end)})`);
+      problems.push(`${s.conflict} ${esc(displayName(c.person))} (${hhmm(c.start)}–${hhmm(c.end)})`);
     }
     if (dryerSlot) {
       for (const c of conflictsFor('dryer', dryerSlot)) {
-        problems.push(`${s.dryer}: ${s.conflict} ${esc(c.person)} (${hhmm(c.start)}–${hhmm(c.end)})`);
+        problems.push(`${s.dryer}: ${s.conflict} ${esc(displayName(c.person))} (${hhmm(c.start)}–${hhmm(c.end)})`);
       }
     }
     // when only the end runs into the next booking, offer to stop right where it starts
@@ -691,7 +741,7 @@ function openDetail(id) {
           <b>${esc(s.newRange(`${hhmm(start)}–${hhmm(end)}`))}</b>
           <span class="muted tiny">${esc(s.wasRange(`${hhmm(b.start)}–${hhmm(b.end)}`))}</span>
         </div>
-        ${hits.length ? `<div class="problems warn">${hits.map(c => `<div>${ICONS.alert}<span>${s.conflict} ${esc(c.person)} (${hhmm(c.start)}–${hhmm(c.end)}) — ${s.tellThem}</span></div>`).join('')}</div>` : ''}
+        ${hits.length ? `<div class="problems warn">${hits.map(c => `<div>${ICONS.alert}<span>${s.conflict} ${esc(displayName(c.person))} (${hhmm(c.start)}–${hhmm(c.end)}) — ${s.tellThem}</span></div>`).join('')}</div>` : ''}
         <div class="sheet-actions">
           <button type="button" class="btn ghost" data-action="back">${s.back}</button>
           <button type="button" class="btn" data-action="r-save">${s.saveChanges}</button>
@@ -722,7 +772,7 @@ function openDetail(id) {
               <button type="button" class="btn danger" data-action="delete">${s.deleteBooking}</button>
             </div>` : ''}
           ${!done ? `<button type="button" class="btn ghost" data-action="ics">${ICONS.cal}<span>${s.addCal}</span></button>` : ''}
-          ${canNudge ? `<button type="button" class="btn" data-action="nudge">${esc(s.nudge(b.person))}</button>` : ''}
+          ${canNudge ? `<button type="button" class="btn" data-action="nudge">${esc(s.nudge(displayName(b.person)))}</button>` : ''}
           <button type="button" class="btn ghost" data-action="close">${s.close}</button>
         </div>`;
     }
@@ -731,7 +781,7 @@ function openDetail(id) {
       <div class="detail-head">
         ${avatar(b.person, 'lg')}
         <div>
-          <h2>${esc(b.person)}${mine ? ` <span class="muted">(${s.you})</span>` : ''}</h2>
+          <h2>${esc(displayName(b.person))}${mine ? ` <span class="muted">(${s.you})</span>` : ''}</h2>
           <div class="muted">${machineName(b.machine)} · ${s.machineNo(MACHINES[b.machine].num)}</div>
         </div>
       </div>
@@ -768,9 +818,9 @@ function openDetail(id) {
         btn.disabled = true;
         try {
           const ok = await store.nudge(`${b.id}_${state.me}`.replace(/[^\w-]/g, '_'), {
-            to: b.person, from: state.me, machine: b.machine, bookingId: b.id, at: Date.now(),
+            to: b.person, from: displayName(state.me), machine: b.machine, bookingId: b.id, at: Date.now(),
           });
-          toast(ok ? s.nudgeSent(b.person) : s.nudgeAlready);
+          toast(ok ? s.nudgeSent(displayName(b.person)) : s.nudgeAlready);
           if (ok) closeSheet();
         } catch (err) {
           console.error(err);
@@ -851,7 +901,7 @@ function openHelp() {
     const perm = NOTIFY_SUPPORTED ? Notification.permission : 'unsupported';
     const status = perm === 'unsupported' ? (IS_IOS && !isStandalone() ? s.notifStatus.needsInstall : s.notifStatus.unsupported)
       : perm === 'denied' ? s.notifStatus.blocked
-        : state.notify && perm === 'granted' && state.me ? s.notifStatus.on(state.me)
+        : state.notify && perm === 'granted' && state.me ? s.notifStatus.on(displayName(state.me))
           : s.notifStatus.off;
     const on = state.notify && perm === 'granted';
     const notif = `

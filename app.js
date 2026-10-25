@@ -24,6 +24,7 @@ const ICONS = {
   alert: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/></svg>',
   bell: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15L6 16z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>',
   bellOff: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15L6 16z"/><path d="M10 20.5a2 2 0 0 0 4 0"/><path d="M3.5 3.5l17 17"/></svg>',
+  help: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6M12 17h.01"/></svg>',
   cal: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
 };
 
@@ -53,8 +54,13 @@ const minutesUntil = ms => Math.max(1, Math.ceil((ms - Date.now()) / MIN));
 const hue = name => [...name].reduce((h, c) => (h * 31 + c.codePointAt(0)) % 360, 7);
 const fmtDur = d => (d < 60 ? `${d} min` : `${Math.floor(d / 60)} h${d % 60 ? ` ${pad(d % 60)}` : ''}`);
 const machineName = m => (m === 'washer' ? t().washer : t().dryer);
-const avatar = (name, cls = '') =>
-  `<span class="avatar ${cls}" style="--h:${hue(name)}">${esc([...name][0] || '?')}</span>`;
+const PHOTO_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+const avatar = (name, cls = '') => {
+  const p = state.profiles[name] || {};
+  if (p.photo && PHOTO_RE.test(p.photo)) return `<span class="avatar photo ${cls}" style="background-image:url('${p.photo}')"></span>`;
+  if (p.emoji) return `<span class="avatar emoji ${cls}" style="--h:${hue(name)}">${esc(p.emoji)}</span>`;
+  return `<span class="avatar ${cls}" style="--h:${hue(name)}">${esc([...name][0] || '?')}</span>`;
+};
 
 // ---------- state ----------
 const state = {
@@ -67,6 +73,8 @@ const state = {
   mode: 'local',
   scrollTimeline: true,
   notify: storage.get('laundry.notify') !== 'off',
+  profiles: {},
+  subscribers: new Set(),
 };
 let store;
 let refreshSheet = null;
@@ -114,6 +122,7 @@ function render() {
         <p class="muted">${state.me ? esc(s.hi(state.me)) : ''}</p>
       </div>
       <div class="topbar-actions">
+        <button class="chip icon-chip" data-action="help" aria-label="${s.help}">${ICONS.help}</button>
         <button class="chip" data-action="lang" aria-label="Language">${state.lang === 'pt' ? 'EN' : 'PT'}</button>
         <button class="chip icon-chip ${notifyActive() ? 'on' : ''}" data-action="notify"
           aria-label="${s.notifLabel}" aria-pressed="${notifyActive()}">${notifyActive() ? ICONS.bell : ICONS.bellOff}</button>
@@ -147,6 +156,8 @@ function render() {
     </section>
 
     ${upNextSection()}
+
+    ${bestHoursSection()}
 
     <details class="card rules">
       <summary>${ICONS.info}<span>${s.howItWorks}</span></summary>
@@ -219,6 +230,57 @@ function myBookingsSection() {
     <section class="card">
       <h2>${s.myBookings}</h2>
       <ul class="list">${mine.map(b => bookingRow(b)).join('')}</ul>
+    </section>`;
+}
+
+// "Best times": how busy each weekday / 2-hour slot was over the last 4 weeks
+const SLOT_HOURS = [6, 8, 10, 12, 14, 16, 18, 20, 22];
+
+function busyMap(machine) {
+  const now = Date.now();
+  const since = startOfDay(now - 28 * DAY);
+  const past = state.bookings.filter(b => b.machine === machine && b.start < now && b.end > since);
+  if (past.length < 5) return null;
+  const grid = Array.from({ length: 7 }, () => SLOT_HOURS.map(() => 0));
+  for (const b of past) {
+    for (let at = Math.max(b.start, since); at < Math.min(b.end, now); at += 15 * MIN) {
+      const d = new Date(at);
+      const h = d.getHours();
+      if (h < SLOT_HOURS[0]) continue;
+      grid[(d.getDay() + 6) % 7][Math.floor((h - SLOT_HOURS[0]) / 2)] += 15;
+    }
+  }
+  const weeks = Math.min(4, Math.max(1, Math.ceil((now - Math.min(...past.map(b => b.start))) / (7 * DAY))));
+  return grid.map(day => day.map(minutes => Math.min(1, minutes / (120 * weeks))));
+}
+
+function bestHoursSection() {
+  const s = t();
+  const map = busyMap(state.machine);
+  const monday = addDays(startOfDay(Date.now()), -((new Date().getDay() + 6) % 7));
+  const dayName = (i, style) => new Date(addDays(monday, i)).toLocaleDateString(s.locale, { weekday: style }).replace('.', '');
+  const level = v => (v < 0.05 ? 0 : v < 0.25 ? 1 : v < 0.5 ? 2 : v < 0.75 ? 3 : 4);
+  let body = `<p class="muted tiny">${s.notEnough}</p>`;
+  if (map) {
+    // quietest slot between 08:00 and 22:00
+    let best = null;
+    map.forEach((day, d) => day.forEach((v, i) => {
+      if (SLOT_HOURS[i] >= 8 && SLOT_HOURS[i] < 22 && (!best || v < best.v)) best = { v, d, i };
+    }));
+    const range = `${pad(SLOT_HOURS[best.i])}–${pad(SLOT_HOURS[best.i] + 2)}h`;
+    body = `
+      <div class="heat">
+        <span></span>${map.map((_, d) => `<span class="heat-day">${esc(dayName(d, 'narrow'))}</span>`).join('')}
+        ${SLOT_HOURS.map((h, i) => `<span class="heat-hour">${pad(h)}h</span>${map.map(day => `<i class="l${level(day[i])}"></i>`).join('')}`).join('')}
+      </div>
+      <div class="heat-legend"><span class="muted">${s.quiet}</span>${[0, 1, 2, 3, 4].map(l => `<i class="l${l}"></i>`).join('')}<span class="muted">${s.full}</span></div>
+      <p class="heat-tip">${esc(s.bestTip(dayName(best.d, 'long'), range))}</p>`;
+  }
+  return `
+    <section class="card">
+      <h2>${s.bestHours}</h2>
+      <p class="muted tiny heat-sub">${esc(s.lastWeeks(machineName(state.machine)))}</p>
+      ${body}
     </section>`;
 }
 
@@ -317,17 +379,104 @@ function closeSheet() {
   if (sheet().open) sheet().close();
 }
 
+const EMOJIS = ['🧺', '👕', '🧦', '🫧', '🌸', '🌻', '🍀', '🌈', '⭐', '🔥', '⚡', '🌙', '☀️', '🌊', '🐱', '🐶',
+  '🦊', '🐼', '🐸', '🦄', '🐝', '🦋', '🐙', '🐢', '🍕', '🍓', '🥑', '🍩', '🍉', '☕', '🎧', '🎮',
+  '⚽', '🏀', '🎸', '📚', '✈️', '🚲', '💎', '👑', '😎', '🤓', '😺', '👻', '🤖', '💀', '🧚', '🦖'];
+
 function openWho() {
   const s = t();
-  openSheet(`
-    <h2>${s.whoAreYou}</h2>
-    <p class="muted">${s.whoHint}</p>
-    <div class="people">
-      ${PEOPLE.map(p => `
-        <button class="person ${p === state.me ? 'active' : ''}" data-action="pick" data-person="${esc(p)}">
-          ${avatar(p)}<span>${esc(p)}</span>
-        </button>`).join('')}
-    </div>`);
+  let mode = 'list'; // 'list' | 'emoji'
+  const draw = () => {
+    const mine = state.me && state.profiles[state.me];
+    const profile = state.me ? `
+      <div class="profile-row">
+        ${avatar(state.me, 'lg')}
+        <div class="profile-main">
+          <b>${esc(state.me)}</b>
+          <div class="profile-actions">
+            <button type="button" class="chip" data-action="p-photo">📷 ${s.photo}</button>
+            <button type="button" class="chip" data-action="p-emoji">😀 ${s.emoji}</button>
+            ${mine ? `<button type="button" class="chip" data-action="p-remove">${s.removeAvatar}</button>` : ''}
+          </div>
+        </div>
+        <input type="file" accept="image/*" data-field="photo" hidden>
+      </div>` : '';
+    if (mode === 'emoji') {
+      openSheet(`
+        <h2>${s.pickEmoji}</h2>
+        <div class="emoji-grid">${EMOJIS.map(e => `<button type="button" data-action="p-set-emoji" data-value="${e}">${e}</button>`).join('')}</div>
+        <label class="emoji-input"><span class="muted tiny">${s.typeEmoji}</span>
+          <input type="text" data-field="emoji" maxlength="8" placeholder="🙂" autocomplete="off"></label>
+        <div class="sheet-actions">
+          <button type="button" class="btn ghost" data-action="p-back">${s.back}</button>
+          <button type="button" class="btn" data-action="p-typed">${s.saveChanges}</button>
+        </div>`, draw);
+    } else {
+      openSheet(`
+        ${state.me ? `<div class="field-label first">${s.myProfile}</div>${profile}` : ''}
+        <h2 class="${state.me ? 'who-title' : ''}">${s.whoAreYou}</h2>
+        <p class="muted">${s.whoHint}</p>
+        <div class="people">
+          ${PEOPLE.map(p => `
+            <button class="person ${p === state.me ? 'active' : ''}" data-action="pick" data-person="${esc(p)}">
+              <span class="av-wrap">${avatar(p)}${state.subscribers.has(p)
+                ? `<i class="bell-badge" title="${esc(p)} ${s.hasNotif}">${ICONS.bell}</i>` : ''}</span>
+              <span>${esc(p)}</span>
+            </button>`).join('')}
+        </div>`, draw);
+    }
+
+    const file = sheet().querySelector('[data-field="photo"]');
+    if (file) {
+      file.onchange = async () => {
+        const f = file.files?.[0];
+        if (!f) return;
+        try {
+          await store.saveProfile(state.me, { photo: await photoToDataUrl(f) });
+          toast(s.saved);
+        } catch (err) {
+          console.error(err);
+          toast(s.photoError);
+        }
+      };
+    }
+    sheet().onclick = async e => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const a = btn.dataset.action;
+      if (a === 'p-photo') return file?.click();
+      if (a === 'p-emoji') { mode = 'emoji'; return draw(); }
+      if (a === 'p-back') { mode = 'list'; return draw(); }
+      let emoji = null;
+      if (a === 'p-set-emoji') emoji = btn.dataset.value;
+      if (a === 'p-typed') emoji = sheet().querySelector('[data-field="emoji"]').value.trim();
+      try {
+        if (a === 'p-remove') { await store.deleteProfile(state.me); toast(s.saved); }
+        if (emoji) {
+          mode = 'list';
+          await store.saveProfile(state.me, { emoji: [...emoji].slice(0, 4).join('') });
+          toast(s.saved);
+          draw();
+        }
+      } catch (err) {
+        console.error(err);
+        toast(s.error);
+      }
+    };
+  };
+  draw();
+}
+
+// Square-crop and shrink a gallery photo to a small JPEG, so it fits in the shared database.
+async function photoToDataUrl(file) {
+  const img = await createImageBitmap(file);
+  const side = Math.min(img.width, img.height);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 160;
+  canvas.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 160, 160);
+  const url = canvas.toDataURL('image/jpeg', 0.82);
+  if (!PHOTO_RE.test(url)) throw new Error('unsupported image');
+  return url;
 }
 
 const clampDuration = d => Math.min(MAX_MIN, Math.max(5, Math.round(d)));
@@ -519,6 +668,8 @@ function openDetail(id) {
     const live = b.start <= now && b.end > now;
     const done = b.end <= now;
     const startsSoon = !live && !done && b.start - now <= 30 * MIN;
+    // someone else's finished booking: ask them (by push) to take their laundry out
+    const canNudge = state.me && !mine && done && now - b.end < 12 * 3600e3 && state.subscribers.has(b.person);
     const linked = sorted().filter(x => x.person === b.person && x.machine !== b.machine && x.id !== b.id
       && startOfDay(x.start) === startOfDay(b.start) && x.start > now);
 
@@ -571,6 +722,7 @@ function openDetail(id) {
               <button type="button" class="btn danger" data-action="delete">${s.deleteBooking}</button>
             </div>` : ''}
           ${!done ? `<button type="button" class="btn ghost" data-action="ics">${ICONS.cal}<span>${s.addCal}</span></button>` : ''}
+          ${canNudge ? `<button type="button" class="btn" data-action="nudge">${esc(s.nudge(b.person))}</button>` : ''}
           <button type="button" class="btn ghost" data-action="close">${s.close}</button>
         </div>`;
     }
@@ -612,6 +764,21 @@ function openDetail(id) {
       if (a === 'remaining') { mode = 'remaining'; return draw(); }
       if (a === 'r-step') { remaining = Math.min(MAX_MIN, Math.max(1, remaining + Number(btn.dataset.value))); return draw(); }
       if (a === 'delete') { mode = 'cancel'; return draw(); }
+      if (a === 'nudge') {
+        btn.disabled = true;
+        try {
+          const ok = await store.nudge(`${b.id}_${state.me}`.replace(/[^\w-]/g, '_'), {
+            to: b.person, from: state.me, machine: b.machine, bookingId: b.id, at: Date.now(),
+          });
+          toast(ok ? s.nudgeSent(b.person) : s.nudgeAlready);
+          if (ok) closeSheet();
+        } catch (err) {
+          console.error(err);
+          toast(s.error);
+        }
+        btn.disabled = false;
+        return;
+      }
       if (!['finish', 'c-confirm', 'r-save'].includes(a)) return;
       busy = true;
       btn.disabled = true;
@@ -662,6 +829,60 @@ function downloadIcs(b) {
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
+// ---------- help: install + notifications ----------
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+let installPrompt = null; // Android/Chrome: the browser's own install popup, saved for the Help button
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; refreshSheet?.(); });
+addEventListener('appinstalled', () => { installPrompt = null; refreshSheet?.(); });
+
+function openHelp() {
+  const s = t();
+  const draw = () => {
+    const steps = list => `<ol class="steps">${list.map(x => `<li>${x}</li>`).join('')}</ol>`;
+    const install = isStandalone()
+      ? `<p class="ok-line">${s.installed}</p>`
+      : `
+        <p class="muted tiny">${s.installWhy}</p>
+        ${installPrompt ? `<button type="button" class="btn wide" data-action="h-install">📲 ${s.installBtn}</button>` : ''}
+        <details class="how" ${IS_IOS ? 'open' : ''}><summary>📱 ${s.forIphone}</summary>${steps(s.iosSteps)}<p class="muted tiny">${s.iosNoPopup}</p></details>
+        <details class="how" ${!IS_IOS && !installPrompt ? 'open' : ''}><summary>🤖 ${s.forAndroid}</summary>${steps(s.androidSteps)}</details>`;
+
+    const perm = NOTIFY_SUPPORTED ? Notification.permission : 'unsupported';
+    const status = perm === 'unsupported' ? (IS_IOS && !isStandalone() ? s.notifStatus.needsInstall : s.notifStatus.unsupported)
+      : perm === 'denied' ? s.notifStatus.blocked
+        : state.notify && perm === 'granted' && state.me ? s.notifStatus.on(state.me)
+          : s.notifStatus.off;
+    const on = state.notify && perm === 'granted';
+    const notif = `
+      <p class="status-line ${on ? 'ok-line' : ''}">${esc(status)}</p>
+      ${perm !== 'unsupported' && perm !== 'denied' && !on ? `<button type="button" class="btn wide" data-action="h-notify">🔔 ${s.notifEnable}</button>` : ''}
+      ${perm === 'denied' ? `<p class="muted tiny">${IS_IOS ? s.blockedIos : s.blockedAndroid}</p>` : ''}
+      <p class="muted tiny">${s.notifWhat}</p>`;
+
+    openSheet(`
+      <h2>${s.help}</h2>
+      <section class="help-block"><h3>📲 ${s.installTitle}</h3>${install}</section>
+      <section class="help-block"><h3>🔔 ${s.notifLabel}</h3>${notif}</section>
+      <div class="sheet-actions stack"><button type="button" class="btn ghost" data-action="close">${s.close}</button></div>`, draw);
+
+    sheet().onclick = async e => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const a = btn.dataset.action;
+      if (a === 'close') closeSheet();
+      if (a === 'h-notify') { enableNotify(); draw(); }
+      if (a === 'h-install' && installPrompt) {
+        installPrompt.prompt();
+        await installPrompt.userChoice.catch(() => {});
+        installPrompt = null;
+        draw();
+      }
+    };
+  };
+  draw();
+}
+
 // ---------- reminders ----------
 // Two layers, same messages (reminders.js):
 //  * local notifications, precise, while the app is open or was just backgrounded;
@@ -673,8 +894,20 @@ let reminderTimer;
 
 function askNotifyPermission() {
   if (state.notify && NOTIFY_SUPPORTED && Notification.permission === 'default') {
-    Notification.requestPermission().then(() => { render(); checkReminders(); syncPush(); }).catch(() => {});
+    Notification.requestPermission().then(() => { render(); refreshSheet?.(); checkReminders(); syncPush(); }).catch(() => {});
   }
+}
+
+function enableNotify() {
+  const s = t();
+  if (!NOTIFY_SUPPORTED) return toast(s.notifUnsupported);
+  if (Notification.permission === 'denied') return toast(s.notifBlocked);
+  state.notify = true;
+  storage.set('laundry.notify', 'on');
+  askNotifyPermission();
+  render();
+  checkReminders();
+  syncPush();
 }
 
 function toggleNotify() {
@@ -788,6 +1021,8 @@ $('#app').addEventListener('click', e => {
     openWho();
   } else if (a === 'notify') {
     toggleNotify();
+  } else if (a === 'help') {
+    openHelp();
   } else if (a === 'machine') {
     state.machine = el.dataset.machine;
     storage.set('laundry.machine', state.machine);
@@ -858,6 +1093,8 @@ store = await createStore(
   () => toast(t().error),
 );
 state.mode = store.mode;
+store.watchProfiles(profiles => { state.profiles = profiles; render(); refreshSheet?.(); });
+store.watchSubscribers(names => { state.subscribers = names; render(); refreshSheet?.(); });
 render();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {

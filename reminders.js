@@ -37,3 +37,9 @@ export function reminderMessage(b, kind, now, lang = 'en', timeZone) {
     : (at > now ? s.remEnd(machine, time, n) : s.remEnded(machine, time));
   return { title: s.title, body, tag: reminderKey(b, kind) };
 }
+
+// "please take your laundry out", asked by `n.from` for `n.to`'s finished booking
+export function nudgeMessage(n, lang = 'en') {
+  const s = STRINGS[lang] || STRINGS.en;
+  return { title: s.title, body: s.remNudge(n.from, n.machine === 'washer' ? s.washer : s.dryer), tag: `nudge_${n.bookingId}` };
+}

@@ -4,7 +4,7 @@
 //   DRY_RUN=1          print what would be sent, without sending or writing anything
 import webpush from 'web-push';
 import { FIREBASE_CONFIG, VAPID_PUBLIC_KEY } from '../config.js';
-import { WINDOWS, dueReminders, reminderMessage, reminderKey } from '../reminders.js';
+import { WINDOWS, dueReminders, reminderMessage, reminderKey, nudgeMessage } from '../reminders.js';
 
 const DRY_RUN = process.env.DRY_RUN === '1';
 const KEY = `key=${FIREBASE_CONFIG.apiKey}`;
@@ -39,6 +39,19 @@ async function activeBookings(now) {
   return (await res.json()).filter(r => r.document).map(r => ({ id: docId(r.document.name), ...fromFs(r.document.fields) }));
 }
 
+async function recentNudges(now) {
+  const res = await api(':runQuery', {
+    method: 'POST',
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: 'nudges' }],
+        where: { fieldFilter: { field: { fieldPath: 'at' }, op: 'GREATER_THAN_OR_EQUAL', value: { integerValue: String(now - 30 * 60e3) } } },
+      },
+    }),
+  });
+  return (await res.json()).filter(r => r.document).map(r => ({ id: docId(r.document.name), ...fromFs(r.document.fields) }));
+}
+
 async function subscriptions() {
   const res = await api('/pushSubs?pageSize=300');
   return ((await res.json()).documents || []).map(d => ({ id: docId(d.name), ...fromFs(d.fields) }));
@@ -63,6 +76,8 @@ const subs = await subscriptions().catch(err => {
   process.exit(0);
 });
 const bookings = await activeBookings(now);
+// older rules don't allow reading nudges yet — reminders still work without them
+const nudges = await recentNudges(now).catch(() => []);
 console.log(`${bookings.length} active bookings, ${subs.length} subscribed phones`);
 
 if (!DRY_RUN) {
@@ -70,6 +85,30 @@ if (!DRY_RUN) {
 }
 
 let sent = 0;
+async function push(p, msg) {
+  try {
+    await webpush.sendNotification(
+      { endpoint: p.endpoint, keys: { p256dh: p.p256dh, auth: p.auth } },
+      JSON.stringify(msg),
+      { TTL: 30 * 60, urgency: 'high' },
+    );
+    sent++;
+    console.log(`sent to ${p.person}: ${msg.body}`);
+  } catch (err) {
+    console.error(`push to ${p.person} failed: ${err.statusCode} ${err.body || err.message}`);
+    // the phone unsubscribed or the app was removed
+    if (err.statusCode === 404 || err.statusCode === 410) await api(`/pushSubs/${p.id}`, { method: 'DELETE' });
+  }
+}
+
+for (const n of nudges) {
+  const phones = subs.filter(s => s.person === n.to);
+  if (!phones.length) continue;
+  if (DRY_RUN) { for (const p of phones) console.log(`[dry run] ${n.to}:`, nudgeMessage(n, p.lang).body); continue; }
+  if (!(await claim(`nudge_${n.id}`, now))) continue;
+  for (const p of phones) await push(p, nudgeMessage(n, p.lang));
+}
+
 for (const b of bookings) {
   const phones = subs.filter(s => s.person === b.person);
   if (!phones.length) continue;
@@ -79,22 +118,7 @@ for (const b of bookings) {
       continue;
     }
     if (!(await claim(reminderKey(b, kind), now))) continue;
-    for (const p of phones) {
-      const msg = reminderMessage(b, kind, now, p.lang, p.tz || 'Europe/Prague');
-      try {
-        await webpush.sendNotification(
-          { endpoint: p.endpoint, keys: { p256dh: p.p256dh, auth: p.auth } },
-          JSON.stringify(msg),
-          { TTL: 30 * 60, urgency: 'high' },
-        );
-        sent++;
-        console.log(`sent to ${b.person}: ${msg.body}`);
-      } catch (err) {
-        console.error(`push to ${b.person} failed: ${err.statusCode} ${err.body || err.message}`);
-        // the phone unsubscribed or the app was removed
-        if (err.statusCode === 404 || err.statusCode === 410) await api(`/pushSubs/${p.id}`, { method: 'DELETE' });
-      }
-    }
+    for (const p of phones) await push(p, reminderMessage(b, kind, now, p.lang, p.tz || 'Europe/Prague'));
   }
 }
 console.log(`${sent} notifications sent`);

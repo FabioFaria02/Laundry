@@ -9,7 +9,7 @@ Funciona em iPhone e Android — abre-se no browser e pode ser adicionada ao ecr
 - **Próximas reservas** de toda a casa e **as minhas reservas**.
 - **Horário do dia** (14 dias à frente): toca numa hora livre para reservar.
 - **Usar agora** com um toque, e **"Secar logo a seguir"** reserva a secadora quando acaba a lavagem.
-- Máximo **2 h por reserva** (50 CZK = 2 h, como diz a senhoria), sem sobreposições.
+- Máximo **4 h por reserva** (limite da senhoria), sem sobreposições.
 - **"Já acabei"** liberta a máquina mais cedo.
 - **Editar** as tuas reservas (dia, hora, duração) e **acertar o tempo restante** com os minutos do visor da máquina.
 - Ao **cancelar**, pergunta se queres cancelar também a reserva da outra máquina no mesmo dia.

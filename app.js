@@ -9,8 +9,8 @@ const PEOPLE = [
   'Martyna', 'Mimi', 'Ourania', 'Sudenaz', 'Umer', 'Veve',
 ];
 const MACHINES = { washer: { num: 2 }, dryer: { num: 1 } };
-const DURATIONS = [30, 45, 60, 90, 120];
-const MAX_MIN = 120;
+const DURATIONS = [30, 45, 60, 90, 120, 180, 240];
+const MAX_MIN = 240; // longest booking the landlady allows (4 h)
 const MIN = 60_000;
 const DAY = 864e5;
 const HOUR_PX = 60;
@@ -605,7 +605,7 @@ function openBook({ machine = state.machine, start = null, edit = null } = {}) {
         </div>` : ''}
       ${form.machine === 'washer' && !edit ? `
         <div class="field-label">${s.dryerAfter}</div>
-        <div class="chips">${chips([...new Set([0, 60, 90, 120, form.dryerAfter])].sort((x, y) => x - y), form.dryerAfter, 'f-dryer')}</div>` : ''}
+        <div class="chips">${chips([...new Set([0, 60, 90, 120, 180, 240, form.dryerAfter])].sort((x, y) => x - y), form.dryerAfter, 'f-dryer')}</div>` : ''}
       <div class="summary">
         ${avatar(state.me, 'sm')}
         <div>
@@ -699,7 +699,7 @@ function openBook({ machine = state.machine, start = null, edit = null } = {}) {
 function adjusted(b, remaining) {
   const now = Date.now();
   const end = Math.round((now + remaining * MIN) / MIN) * MIN;
-  const start = Math.max(Math.min(b.start, Math.floor(now / MIN) * MIN), end - 4 * 60 * MIN);
+  const start = Math.max(Math.min(b.start, Math.floor(now / MIN) * MIN), end - MAX_MIN * MIN);
   return { start, end };
 }
 

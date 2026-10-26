@@ -7,8 +7,7 @@ service cloud.firestore {
         && d.person is string && d.person.size() > 0 && d.person.size() <= 30
         && d.start is number && d.end is number
         && d.end > d.start
-        // new bookings are limited to 2 h (50 CZK) in the app; adjusting the
-        // remaining time from the machine display may stretch one a bit further
+        // the landlady allows bookings of up to 4 h
         && d.end - d.start <= 4 * 60 * 60 * 1000
         && (!('done' in d) || d.done is bool);
     }

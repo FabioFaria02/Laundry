@@ -391,3 +391,16 @@ h2 { font-size: 18px; letter-spacing: -.01em; margin: 0 0 12px; }
 .clock-val .unit { font-size: 12px; font-weight: 600; color: var(--muted); line-height: 1.2; margin-top: 2px; }
 @media (max-width: 360px) { .stepper.clock .chip.step { width: 38px; } .stepper.clock { gap: 4px; } }
 .fields label, .fields input { min-width: 0; }
+
+/* schedule showing both machines side by side */
+.cols-head { display: grid; grid-template-columns: 46px 1fr 1fr; padding-right: 6px; margin: 4px 0 6px; font-size: 14px; font-weight: 700; }
+.cols-head b { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 0; margin: 0 2px; border-radius: 12px; background: var(--surface-2); }
+.cols-head svg { width: 18px; height: 18px; }
+.grid.both::before { content: ""; position: absolute; top: 0; bottom: 0; left: calc(46px + (100% - 52px) / 2 + 2px); border-left: 1px dashed var(--line); pointer-events: none; }
+.grid.both .hour span { left: 6px; }
+.grid.both .now-line { left: 38px; }
+.grid.both .now-line span { left: -38px; }
+.grid.both .block { flex-direction: column; gap: 0; padding: 4px 7px; }
+.grid.both .block b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.grid.both .block span { font-size: 12.5px; }
+.segmented button { white-space: nowrap; }

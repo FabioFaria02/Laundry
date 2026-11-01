@@ -7,7 +7,7 @@ Funciona em iPhone e Android — abre-se no browser e pode ser adicionada ao ecr
 
 - **Estado em tempo real** de cada máquina: livre / em uso, por quem e quantos minutos faltam.
 - **Próximas reservas** de toda a casa e **as minhas reservas**.
-- **Horário do dia** (14 dias à frente): toca numa hora livre para reservar.
+- **Horário do dia** (14 dias à frente): toca numa hora livre para reservar. Por defeito mostra as **duas máquinas lado a lado** ("Ambas"); também há só lavar ou só secar.
 - **Usar agora** com um toque, e **"Secar logo a seguir"** reserva a secadora quando acaba a lavagem.
 - Máximo **4 h por reserva** (limite da senhoria), sem sobreposições.
 - **"Já acabei"** liberta a máquina mais cedo.

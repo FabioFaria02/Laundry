@@ -96,7 +96,8 @@ const state = {
   bookings: [],
   me: PEOPLE.includes(storage.get('laundry.me')) ? storage.get('laundry.me') : null,
   lang: storage.get('laundry.lang') || (navigator.language?.toLowerCase().startsWith('pt') ? 'pt' : 'en'),
-  machine: storage.get('laundry.machine') === 'dryer' ? 'dryer' : 'washer',
+  machine: storage.get('laundry.machine') === 'dryer' ? 'dryer' : 'washer', // default for new bookings and the best-times map
+  view: ['washer', 'dryer'].includes(storage.get('laundry.view')) ? storage.get('laundry.view') : 'both', // which machines the schedule shows
   day: startOfDay(Date.now()),
   duration: Number(storage.get('laundry.duration')) || 90,
   mode: 'local',
@@ -110,6 +111,7 @@ let refreshSheet = null;
 
 const t = () => STRINGS[state.lang];
 const sorted = () => [...state.bookings].sort((a, b) => a.start - b.start);
+const viewMachines = () => (state.view === 'both' ? ['washer', 'dryer'] : [state.view]);
 const forMachine = m => sorted().filter(b => b.machine === m);
 const currentOf = m => forMachine(m).find(b => b.start <= Date.now() && b.end > Date.now());
 const nextOf = m => forMachine(m).find(b => b.start > Date.now());
@@ -173,14 +175,15 @@ function render() {
       <div class="section-head">
         <h2>${s.schedule}</h2>
         <div class="segmented" role="tablist">
-          ${['washer', 'dryer'].map(m => `
-            <button role="tab" aria-selected="${state.machine === m}" data-action="machine" data-machine="${m}">
-              ${ICONS[m]}<span>${m === 'washer' ? s.washerShort : s.dryerShort}</span>
+          ${['washer', 'dryer', 'both'].map(v => `
+            <button role="tab" aria-selected="${state.view === v}" data-action="view" data-view="${v}">
+              ${v === 'both' ? '' : ICONS[v]}<span>${v === 'both' ? s.both : v === 'washer' ? s.washerShort : s.dryerShort}</span>
             </button>`).join('')}
         </div>
       </div>
       <div class="days" role="tablist">${daysStrip()}</div>
       <p class="hint muted">${s.tapToBook} · ${s.maxNote}</p>
+      ${state.view === 'both' ? `<div class="cols-head"><span></span>${['washer', 'dryer'].map(m => `<b>${ICONS[m]}${m === 'washer' ? s.washerShort : s.dryerShort}</b>`).join('')}</div>` : ''}
       <div class="timeline">${timelineGrid()}</div>
     </section>
 
@@ -203,7 +206,7 @@ function render() {
     tl.scrollTop = keepScroll;
   } else {
     const isToday = state.day === startOfDay(Date.now());
-    const firstBooking = forMachine(state.machine).find(b => b.end > state.day && b.start < addDays(state.day, 1));
+    const firstBooking = sorted().find(b => viewMachines().includes(b.machine) && b.end > state.day && b.start < addDays(state.day, 1));
     const focus = isToday ? Date.now() : firstBooking ? firstBooking.start : atTime(state.day, 9 * 60);
     tl.scrollTop = Math.max(0, yOf(focus, state.day) - 1.5 * HOUR_PX);
     state.scrollTimeline = false;
@@ -242,7 +245,7 @@ function machineCard(m) {
     ? `<div class="next muted">${s.next}: ${esc(displayName(next.person))} · ${startOfDay(next.start) === startOfDay(Date.now()) ? hhmm(next.start) : `${esc(dayLabel(next.start))} ${hhmm(next.start)}`}</div>`
     : `<div class="next muted">${s.freeAllDay}</div>`;
   return `
-    <article class="card machine ${cur ? 'is-busy' : 'is-free'} ${state.machine === m ? 'selected' : ''}" data-action="machine" data-machine="${m}">
+    <article class="card machine ${cur ? 'is-busy' : 'is-free'} ${state.view === m ? 'selected' : ''}" ${state.view === 'both' ? '' : `data-action="view" data-view="${m}"`}>
       <div class="machine-head">
         <span class="machine-icon">${ICONS[m]}</span>
         <div><div class="machine-name">${name}</div><div class="muted tiny">${s.machineNo(MACHINES[m].num)}</div></div>
@@ -325,7 +328,15 @@ function bestHoursSection() {
   }
   return `
     <section class="card">
-      <h2>${s.bestHours}</h2>
+      <div class="section-head">
+        <h2>${s.bestHours}</h2>
+        <div class="segmented" role="tablist">
+          ${['washer', 'dryer'].map(m => `
+            <button role="tab" aria-selected="${state.machine === m}" data-action="heat-machine" data-machine="${m}">
+              ${ICONS[m]}<span>${m === 'washer' ? s.washerShort : s.dryerShort}</span>
+            </button>`).join('')}
+        </div>
+      </div>
       <p class="muted tiny heat-sub">${esc(s.lastWeeks(machineName(state.machine)))}</p>
       ${body}
     </section>`;
@@ -362,7 +373,7 @@ function bookingRow(b, showPerson = false) {
 function daysStrip() {
   const today = startOfDay(Date.now());
   const counts = {};
-  for (const b of forMachine(state.machine)) {
+  for (const b of sorted().filter(x => viewMachines().includes(x.machine))) {
     const k = startOfDay(b.start);
     counts[k] = (counts[k] || 0) + 1;
   }
@@ -379,15 +390,18 @@ function daysStrip() {
   }).join('');
 }
 
+const GUTTER = 46; // hour labels column in the two-machine view
+
 function timelineGrid() {
   const s = t();
+  const both = state.view === 'both';
   const dayStart = state.day;
   const dayEnd = addDays(dayStart, 1);
   const hours = Array.from({ length: 24 }, (_, h) =>
     `<div class="hour" style="top:${h * HOUR_PX}px"><span>${pad(h)}:00</span></div>`).join('');
-  const dayBookings = forMachine(state.machine).filter(b => b.end > dayStart && b.start < dayEnd);
-  const blocks = dayBookings
-    .map(b => {
+  const blocks = viewMachines().flatMap((m, mi) => {
+    const dayBookings = forMachine(m).filter(b => b.end > dayStart && b.start < dayEnd);
+    return dayBookings.map(b => {
       const top = yOf(b.start, dayStart);
       const height = Math.max(22, yOf(b.end, dayStart) - top - 2);
       const mine = b.person === state.me;
@@ -396,19 +410,26 @@ function timelineGrid() {
       const group = dayBookings.filter(x => overlaps(x, b));
       const cols = group.length;
       const col = group.indexOf(b);
-      const side = cols > 1 ? `left:calc(62px + (100% - 70px) * ${col} / ${cols});right:auto;width:calc((100% - 70px) / ${cols} - 4px);` : '';
+      let side = '';
+      if (both) {
+        const rest = GUTTER + 6; // labels on the left, a small margin on the right
+        side = `left:calc(${GUTTER}px + (100% - ${rest}px) * ${(mi + col / cols) / 2} + 2px);right:auto;width:calc((100% - ${rest}px) * ${1 / (2 * cols)} - 4px);`;
+      } else if (cols > 1) {
+        side = `left:calc(62px + (100% - 70px) * ${col} / ${cols});right:auto;width:calc((100% - 70px) / ${cols} - 4px);`;
+      }
       return `
         <button class="block ${mine ? 'mine' : ''} ${past ? 'past' : ''}" style="top:${top}px;height:${height}px;${side}--h:${hue(b.person)}"
           data-action="detail" data-id="${esc(b.id)}">
           <b>${esc(displayName(b.person))}${mine ? ` (${s.you})` : ''}</b>
           <span>${hhmm(b.start)}–${hhmm(b.end)}</span>
         </button>`;
-    }).join('');
+    });
+  }).join('');
   const now = Date.now();
   const nowLine = now >= dayStart && now < dayEnd
     ? `<div class="now-line" style="top:${yOf(now, dayStart)}px"><span>${hhmm(now)}</span></div>`
     : '';
-  return `<div class="grid" data-action="slot" style="height:${24 * HOUR_PX}px">${hours}${blocks}${nowLine}</div>`;
+  return `<div class="grid ${both ? 'both' : ''}" data-action="slot" style="height:${24 * HOUR_PX}px">${hours}${blocks}${nowLine}</div>`;
 }
 
 // ---------- sheets ----------
@@ -618,6 +639,7 @@ function openBusy(machine) {
           const start = Math.floor(Date.now() / MIN) * MIN;
           await store.add({ machine: form.machine, person: UNKNOWN, start, end: start + form.minutes * MIN });
           state.machine = form.machine;
+          if (state.view !== 'both') state.view = form.machine;
           closeSheet();
           toast(s.busyDone);
           render();
@@ -772,6 +794,7 @@ function openBook({ machine = state.machine, start = null, edit = null } = {}) {
             storage.set('laundry.duration', String(form.duration));
           }
           state.machine = form.machine;
+          if (state.view !== 'both') state.view = form.machine;
           state.day = startOfDay(form.start);
           state.scrollTimeline = true;
           closeSheet();
@@ -1166,10 +1189,18 @@ $('#app').addEventListener('click', e => {
     openHelp();
   } else if (a === 'busy') {
     openBusy(el.dataset.machine);
-  } else if (a === 'machine') {
+  } else if (a === 'view') {
+    state.view = el.dataset.view;
+    storage.set('laundry.view', state.view);
+    if (state.view !== 'both') {
+      state.machine = state.view;
+      storage.set('laundry.machine', state.machine);
+    }
+    state.scrollTimeline = true;
+    render();
+  } else if (a === 'heat-machine') {
     state.machine = el.dataset.machine;
     storage.set('laundry.machine', state.machine);
-    state.scrollTimeline = true;
     render();
   } else if (a === 'day') {
     state.day = Number(el.dataset.day);
@@ -1194,7 +1225,13 @@ $('#app').addEventListener('click', e => {
     const minutes = Math.max(0, Math.min(24 * 60 - 15, Math.floor(((y / HOUR_PX) * 60) / 15) * 15));
     let start = atTime(state.day, minutes);
     if (start < Date.now() && start + 15 * MIN > Date.now()) start = Math.floor(Date.now() / MIN) * MIN;
-    openBook({ machine: state.machine, start });
+    let machine = state.view;
+    if (state.view === 'both') {
+      // the left half of the grid is the washer, the right half the dryer
+      const rect = el.getBoundingClientRect();
+      machine = e.clientX - rect.left < GUTTER + (rect.width - GUTTER - 6) / 2 ? 'washer' : 'dryer';
+    }
+    openBook({ machine, start });
   }
 });
 

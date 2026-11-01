@@ -404,3 +404,9 @@ h2 { font-size: 18px; letter-spacing: -.01em; margin: 0 0 12px; }
 .grid.both .block b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .grid.both .block span { font-size: 12.5px; }
 .segmented button { white-space: nowrap; }
+
+/* pass a booking to someone else */
+.people.compact { grid-template-columns: repeat(4, 1fr); gap: 6px; max-height: 38vh; overflow-y: auto; margin-top: 10px; }
+.people.compact .person { padding: 10px 2px 8px; font-size: 12.5px; }
+.people.compact .person span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.transfer-hint { margin: 10px 2px 0; }

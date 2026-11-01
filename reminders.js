@@ -39,7 +39,22 @@ export function reminderMessage(b, kind, now, lang = 'en', timeZone) {
 }
 
 // "please take your laundry out", asked by `n.from` for `n.to`'s finished booking
-export function nudgeMessage(n, lang = 'en') {
+// Used for "please take your laundry out" and for bookings passed to someone else (n.kind === 'transfer').
+export function nudgeMessage(n, lang = 'en', timeZone) {
   const s = STRINGS[lang] || STRINGS.en;
-  return { title: s.title, body: s.remNudge(n.from, n.machine === 'washer' ? s.washer : s.dryer), tag: `nudge_${n.bookingId}` };
+  const machine = n.machine === 'washer' ? s.washer : s.dryer;
+  if (n.kind === 'transfer') {
+    const time = ms => new Date(ms).toLocaleTimeString(s.locale, { hour: '2-digit', minute: '2-digit', hour12: false, timeZone });
+    const body = s.remTransfer(n.from, machine, dayWord(n.start, n.at, timeZone, s), `${time(n.start)}–${time(n.end)}`);
+    return { title: s.title, body, tag: `transfer_${n.bookingId}_${n.at}` };
+  }
+  return { title: s.title, body: s.remNudge(n.from, machine), tag: `nudge_${n.bookingId}` };
+}
+
+// "today", "tomorrow" or e.g. "Thu 5 Nov", seen from `now`
+function dayWord(at, now, timeZone, s) {
+  const key = ms => new Date(ms).toLocaleDateString('en-CA', { timeZone });
+  if (key(at) === key(now)) return s.today.toLowerCase();
+  if (key(at) === key(now + 24 * 60 * MIN)) return s.tomorrow.toLowerCase();
+  return new Date(at).toLocaleDateString(s.locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone });
 }

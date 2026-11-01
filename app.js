@@ -28,6 +28,7 @@ const ICONS = {
   bell: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15L6 16z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>',
   bellOff: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15L6 16z"/><path d="M10 20.5a2 2 0 0 0 4 0"/><path d="M3.5 3.5l17 17"/></svg>',
   help: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6M12 17h.01"/></svg>',
+  swap: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h14M14 4l4 4-4 4M20 16H6M10 12l-4 4 4 4"/></svg>',
   cal: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
 };
 
@@ -823,7 +824,8 @@ function adjusted(b, remaining) {
 
 function openDetail(id) {
   const s = t();
-  let mode = 'view'; // 'view' | 'remaining' | 'cancel'
+  let mode = 'view'; // 'view' | 'remaining' | 'cancel' | 'transfer'
+  let target = null; // who the booking is being passed to
   let remaining = null;
   let busy = false;
 
@@ -862,6 +864,21 @@ function openDetail(id) {
           <button type="button" class="btn ghost" data-action="back">${s.back}</button>
           <button type="button" class="btn" data-action="r-save">${s.saveChanges}</button>
         </div>`;
+    } else if (mode === 'transfer') {
+      body = `
+        <h3 class="confirm-title">${s.transferTitle}</h3>
+        <div class="people compact">
+          ${PEOPLE.filter(p => p !== state.me).map(p => `
+            <button type="button" class="person ${p === target ? 'active' : ''}" data-action="t-pick" data-person="${esc(p)}">
+              <span class="av-wrap">${avatar(p)}${state.subscribers.has(p) ? `<i class="bell-badge">${ICONS.bell}</i>` : ''}</span>
+              <span>${esc(displayName(p))}</span>
+            </button>`).join('')}
+        </div>
+        <p class="muted tiny transfer-hint">${s.transferHint}</p>
+        <div class="sheet-actions">
+          <button type="button" class="btn ghost" data-action="back">${s.back}</button>
+          <button type="button" class="btn" data-action="t-save" ${target ? '' : 'disabled'}>${target ? esc(s.transferTo(displayName(target))) : s.transfer}</button>
+        </div>`;
     } else if (mode === 'cancel') {
       body = `
         <h3 class="confirm-title">${s.cancelConfirm}</h3>
@@ -888,6 +905,7 @@ function openDetail(id) {
               <button type="button" class="btn ghost" data-action="edit">${s.edit}</button>
               <button type="button" class="btn danger" data-action="delete">${s.deleteBooking}</button>
             </div>` : ''}
+          ${mine && !done ? `<button type="button" class="btn ghost" data-action="transfer">${ICONS.swap}<span>${s.transfer}</span></button>` : ''}
           ${unknown && !done ? `<button type="button" class="btn danger" data-action="delete">${s.deleteBooking}</button>` : ''}
           ${!done ? `<button type="button" class="btn ghost" data-action="ics">${ICONS.cal}<span>${s.addCal}</span></button>` : ''}
           ${canNudge ? `<button type="button" class="btn" data-action="nudge">${esc(s.nudge(displayName(b.person)))}</button>` : ''}
@@ -923,7 +941,9 @@ function openDetail(id) {
       if (a === 'close') return closeSheet();
       if (a === 'ics') return downloadIcs(b);
       if (a === 'edit') return openBook({ edit: b });
-      if (a === 'back') { mode = 'view'; remaining = null; return draw(); }
+      if (a === 'back') { mode = 'view'; remaining = null; target = null; return draw(); }
+      if (a === 'transfer') { mode = 'transfer'; return draw(); }
+      if (a === 't-pick') { target = btn.dataset.person; return draw(); }
       if (a === 'remaining') { mode = 'remaining'; return draw(); }
       if (a === 'r-step') { remaining = Math.min(MAX_MIN, Math.max(1, remaining + Number(btn.dataset.value))); return draw(); }
       if (a === 'delete') { mode = 'cancel'; return draw(); }
@@ -942,11 +962,25 @@ function openDetail(id) {
         btn.disabled = false;
         return;
       }
-      if (!['finish', 'c-confirm', 'r-save', 'claim'].includes(a)) return;
+      if (!['finish', 'c-confirm', 'r-save', 'claim', 't-save'].includes(a)) return;
       busy = true;
       btn.disabled = true;
       try {
         if (a === 'finish') { await store.finish(b.id, Date.now()); toast(s.freed); }
+        if (a === 't-save' && target) {
+          // the booking changes hands (same times), then the new owner is told by push
+          await store.replace(b.id, { machine: b.machine, person: target, start: b.start, end: b.end });
+          try {
+            await store.nudge(`transfer_${b.id}_${Date.now()}`.replace(/[^\w-]/g, '_'), {
+              to: target, from: displayName(state.me), machine: b.machine, bookingId: b.id, at: Date.now(),
+              kind: 'transfer', start: b.start, end: b.end,
+            });
+          } catch (err) {
+            console.error(err);
+          }
+          const who = displayName(target);
+          toast(state.subscribers.has(target) ? s.transferred(who) : s.transferredNoNotif(who));
+        }
         if (a === 'claim') { await store.replace(b.id, { machine: b.machine, person: state.me, start: b.start, end: b.end }); toast(s.claimed); }
         if (a === 'c-confirm') {
           const extra = [...sheet().querySelectorAll('[data-linked]:checked')].map(x => x.dataset.linked);
@@ -1248,7 +1282,12 @@ sheet().addEventListener('click', e => {
     syncPush();
   }
 });
-sheet().addEventListener('close', () => { refreshSheet = null; sheet().onclick = null; });
+// 'close' arrives asynchronously: if another sheet was opened meanwhile, leave its handlers alone
+sheet().addEventListener('close', () => {
+  if (sheet().open) return;
+  refreshSheet = null;
+  sheet().onclick = null;
+});
 
 // keep "minutes left" fresh
 setInterval(() => { render(); checkReminders(); }, 20_000);

@@ -18,6 +18,7 @@ Funciona em iPhone e Android — abre-se no browser e pode ser adicionada ao ecr
   ~10 min antes de começar e ~5–10 min antes de acabar. Com a app fechada chegam por push (ver secção 4).
 - **Ajuda** (botão ? no topo): instalar a app (popup do Chrome no Android, passos no iPhone) e ativar notificações.
 - **Perfil**: mudar o nome, foto da galeria ou emoji em vez da inicial (em "Quem és tu?"); o sino mostra quem tem notificações.
+- **Passar a reserva a outra pessoa**: na tua reserva, "Passar a outra pessoa"; o novo dono recebe uma notificação.
 - **Avisar para tirar a roupa**: numa reserva já terminada de outra pessoa (com notificações), envia-lhe um push.
 - **Melhores horas**: mapa das horas mais ocupadas nas últimas 4 semanas.
 - **Máquina ocupada por alguém**: marca uma máquina como ocupada (com os minutos do visor) quando não sabes de quem é; ninguém recebe notificações e qualquer pessoa a pode libertar ou reclamar ("É minha").

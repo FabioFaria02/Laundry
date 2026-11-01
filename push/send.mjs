@@ -104,9 +104,9 @@ async function push(p, msg) {
 for (const n of nudges) {
   const phones = subs.filter(s => s.person === n.to);
   if (!phones.length) continue;
-  if (DRY_RUN) { for (const p of phones) console.log(`[dry run] ${n.to}:`, nudgeMessage(n, p.lang).body); continue; }
+  if (DRY_RUN) { for (const p of phones) console.log(`[dry run] ${n.to}:`, nudgeMessage(n, p.lang, p.tz).body); continue; }
   if (!(await claim(`nudge_${n.id}`, now))) continue;
-  for (const p of phones) await push(p, nudgeMessage(n, p.lang));
+  for (const p of phones) await push(p, nudgeMessage(n, p.lang, p.tz || 'Europe/Prague'));
 }
 
 for (const b of bookings) {

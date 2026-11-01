@@ -102,7 +102,7 @@ async function push(p, msg) {
 }
 
 for (const n of nudges) {
-  const phones = subs.filter(s => s.person === n.to);
+  const phones = n.to === '*' ? subs : subs.filter(s => s.person === n.to); // '*' = everyone (admin messages)
   if (!phones.length) continue;
   if (DRY_RUN) { for (const p of phones) console.log(`[dry run] ${n.to}:`, nudgeMessage(n, p.lang, p.tz).body); continue; }
   if (!(await claim(`nudge_${n.id}`, now))) continue;

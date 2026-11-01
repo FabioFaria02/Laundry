@@ -43,19 +43,29 @@ service cloud.firestore {
           && request.resource.data.photo.matches('data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+')));
     }
 
-    // "please take your laundry out" requests and bookings passed to someone else (kind: 'transfer'),
-    // both sent as a push by the GitHub Action
+    // notifications written by the app and delivered as a push by the GitHub Action:
+    //  - no kind: "please take your laundry out"
+    //  - 'transfer' / 'assign': a booking passed or assigned to someone
+    //  - 'message': free text from God mode (to == '*' means everyone)
     match /nudges/{id} {
       allow read: if true;
-      allow create: if request.resource.data.keys().hasOnly(['to', 'from', 'machine', 'bookingId', 'at', 'kind', 'start', 'end'])
+      allow create: if request.resource.data.keys().hasOnly(['to', 'from', 'machine', 'bookingId', 'at', 'kind', 'start', 'end', 'text'])
         && request.resource.data.to is string && request.resource.data.to.size() <= 30
         && request.resource.data.from is string && request.resource.data.from.size() <= 30
-        && request.resource.data.machine in ['washer', 'dryer']
-        && request.resource.data.bookingId is string && request.resource.data.bookingId.size() <= 64
         && request.resource.data.at is number
-        && (!('kind' in request.resource.data) || (request.resource.data.kind == 'transfer'
-          && request.resource.data.start is number && request.resource.data.end is number
-          && request.resource.data.end > request.resource.data.start));
+        && (
+          (!('kind' in request.resource.data)
+            && request.resource.data.machine in ['washer', 'dryer']
+            && request.resource.data.bookingId is string && request.resource.data.bookingId.size() <= 64)
+          || (('kind' in request.resource.data) && request.resource.data.kind in ['transfer', 'assign']
+            && request.resource.data.machine in ['washer', 'dryer']
+            && request.resource.data.bookingId is string && request.resource.data.bookingId.size() <= 64
+            && request.resource.data.start is number && request.resource.data.end is number
+            && request.resource.data.end > request.resource.data.start)
+          || (('kind' in request.resource.data) && request.resource.data.kind == 'message'
+            && request.resource.data.text is string
+            && request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 200)
+        );
     }
 
     // reminders already sent (written by the GitHub Action, never changed)

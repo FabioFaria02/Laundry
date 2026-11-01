@@ -410,3 +410,24 @@ h2 { font-size: 18px; letter-spacing: -.01em; margin: 0 0 12px; }
 .people.compact .person { padding: 10px 2px 8px; font-size: 12.5px; }
 .people.compact .person span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .transfer-hint { margin: 10px 2px 0; }
+
+/* God mode */
+.who-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.who-head.has-me { margin-top: 20px; }
+.who-head h2 { margin: 0; }
+.key-btn { width: 38px; height: 38px; border-radius: 12px; background: var(--surface-2); color: var(--muted); display: inline-grid; place-items: center; }
+.key-btn.on { background: var(--warn-soft); color: var(--warn); }
+.admin-bar { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 14px; border-radius: 14px; background: var(--warn-soft); color: var(--warn); font-weight: 650; font-size: 14px; text-align: left; }
+.admin-bar svg { width: 18px; height: 18px; }
+.pin-input { width: 100%; margin-top: 8px; padding: 14px; text-align: center; font: inherit; font-size: 28px; letter-spacing: .3em; color: var(--text); background: var(--surface-2); border: 1.5px solid transparent; border-radius: 14px; }
+.pin-input:focus { outline: none; border-color: var(--accent); }
+.pin-error { min-height: 1.4em; margin: 8px 0 0; text-align: center; color: var(--busy); font-weight: 600; font-size: 14px; }
+.god-list { margin: 10px 0 16px; padding-left: 20px; display: grid; gap: 6px; font-size: 14.5px; }
+.select, .textarea {
+  width: 100%; font: inherit; font-size: 16px; color: var(--text); background: var(--surface-2);
+  border: 1.5px solid transparent; border-radius: 12px; padding: 12px;
+}
+.textarea { resize: none; }
+.select:focus, .textarea:focus { outline: none; border-color: var(--accent); }
+.chips.quick { margin-top: 10px; }
+.chips.quick .chip { font-size: 13px; text-align: left; }

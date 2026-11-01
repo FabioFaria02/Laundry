@@ -1,6 +1,6 @@
 // Network-first for the app shell so updates show up right away; cache is only an offline fallback.
-const CACHE = 'laundry-v18';
-const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'store.js', 'i18n.js', 'reminders.js', 'config.js', 'manifest.webmanifest', 'icons/icon.svg'];
+const CACHE = 'laundry-v19';
+const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'store.js', 'i18n.js', 'reminders.js', 'admin.js', 'config.js', 'manifest.webmanifest', 'icons/icon.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

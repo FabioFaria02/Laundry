@@ -39,10 +39,17 @@ export function reminderMessage(b, kind, now, lang = 'en', timeZone) {
 }
 
 // "please take your laundry out", asked by `n.from` for `n.to`'s finished booking
-// Used for "please take your laundry out" and for bookings passed to someone else (n.kind === 'transfer').
+// Used for "please take your laundry out", bookings passed to someone ('transfer'), bookings assigned by
+// an admin ('assign') and free-text messages from an admin ('message').
 export function nudgeMessage(n, lang = 'en', timeZone) {
   const s = STRINGS[lang] || STRINGS.en;
-  const machine = n.machine === 'washer' ? s.washer : s.dryer;
+  const machine = n.machine === 'washer' ? s.washer : s.dryer; // undefined for plain messages
+  if (n.kind === 'message') return { title: s.title, body: n.text, tag: `msg_${n.at}` };
+  if (n.kind === 'assign') {
+    const time = ms => new Date(ms).toLocaleTimeString(s.locale, { hour: '2-digit', minute: '2-digit', hour12: false, timeZone });
+    const body = s.remAssigned(machine, dayWord(n.start, n.at, timeZone, s), `${time(n.start)}–${time(n.end)}`);
+    return { title: s.title, body, tag: `assign_${n.bookingId}_${n.at}` };
+  }
   if (n.kind === 'transfer') {
     const time = ms => new Date(ms).toLocaleTimeString(s.locale, { hour: '2-digit', minute: '2-digit', hour12: false, timeZone });
     const body = s.remTransfer(n.from, machine, dayWord(n.start, n.at, timeZone, s), `${time(n.start)}–${time(n.end)}`);

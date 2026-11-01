@@ -18,6 +18,7 @@ Funciona em iPhone e Android — abre-se no browser e pode ser adicionada ao ecr
   ~10 min antes de começar e ~5–10 min antes de acabar. Com a app fechada chegam por push (ver secção 4).
 - **Ajuda** (botão ? no topo): instalar a app (popup do Chrome no Android, passos no iPhone) e ativar notificações.
 - **Perfil**: mudar o nome, foto da galeria ou emoji em vez da inicial (em "Quem és tu?"); o sino mostra quem tem notificações.
+- **Modo God** (chave ao lado de "Quem és tu?", protegido por PIN): editar, passar, terminar ou eliminar qualquer reserva, reservar em nome de qualquer pessoa, sobrepor reservas e enviar notificações a uma pessoa ou a toda a gente. O PIN não está no código, só um hash dele (`admin.js`).
 - **Passar a reserva a outra pessoa**: na tua reserva, "Passar a outra pessoa"; o novo dono recebe uma notificação.
 - **Avisar para tirar a roupa**: numa reserva já terminada de outra pessoa (com notificações), envia-lhe um push.
 - **Melhores horas**: mapa das horas mais ocupadas nas últimas 4 semanas.

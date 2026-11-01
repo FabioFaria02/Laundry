@@ -2,6 +2,7 @@ import { createStore } from './store.js';
 import { STRINGS } from './i18n.js';
 import { VAPID_PUBLIC_KEY } from './config.js';
 import { WINDOWS, dueReminders, reminderMessage } from './reminders.js';
+import { checkPin, UNLOCK_MS, MAX_TRIES, LOCK_MS } from './admin.js';
 
 const PEOPLE = [
   'Fábio', 'Alina', 'Filipa', 'Francisco', 'Inês', 'Laura',
@@ -29,6 +30,7 @@ const ICONS = {
   bellOff: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15L6 16z"/><path d="M10 20.5a2 2 0 0 0 4 0"/><path d="M3.5 3.5l17 17"/></svg>',
   help: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6M12 17h.01"/></svg>',
   swap: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h14M14 4l4 4-4 4M20 16H6M10 12l-4 4 4 4"/></svg>',
+  key: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3M14 9l2 2"/></svg>',
   cal: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
 };
 
@@ -37,6 +39,8 @@ const storage = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* ignore */ } },
 };
+// God mode (see admin.js): on for a few hours after the PIN was entered on this phone
+const isAdmin = () => Number(storage.get('laundry.admin')) > Date.now();
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pad = n => String(n).padStart(2, '0');
@@ -164,6 +168,8 @@ function render() {
       </div>
     </header>
 
+    ${isAdmin() ? `<button class="admin-bar" data-action="admin">${ICONS.key}<span>${s.godBar}</span></button>` : ''}
+
     ${state.mode === 'local' ? `<div class="banner">${ICONS.info}<span>${esc(s.demo)}</span></div>` : ''}
 
     <section class="machines">
@@ -233,7 +239,7 @@ function machineCard(m) {
       <div class="who">${avatar(cur.person, 'sm')}<span>${esc(displayName(cur.person))}${cur.person === state.me ? ` (${s.you})` : ''}</span></div>
       <div class="big">${esc(s.minLeft(minutesUntil(cur.end)))}</div>
       <div class="progress"><span style="width:${pct}%"></span></div>`;
-    if (cur.person === state.me || cur.person === UNKNOWN) {
+    if (cur.person === state.me || cur.person === UNKNOWN || isAdmin()) {
       action = `<button class="btn small" data-action="done" data-id="${esc(cur.id)}">${s.markDone}</button>`;
     }
   } else {
@@ -500,7 +506,10 @@ function openWho() {
     } else {
       openSheet(`
         ${state.me ? `<div class="field-label first">${s.myProfile}</div>${profile}` : ''}
-        <h2 class="${state.me ? 'who-title' : ''}">${s.whoAreYou}</h2>
+        <div class="who-head ${state.me ? 'has-me' : ''}">
+          <h2>${s.whoAreYou}</h2>
+          <button type="button" class="key-btn ${isAdmin() ? 'on' : ''}" data-action="admin" aria-label="${s.godMode}">${ICONS.key}</button>
+        </div>
         <p class="muted">${s.whoHint}</p>
         <div class="people">
           ${PEOPLE.map(p => `
@@ -530,6 +539,7 @@ function openWho() {
       const btn = e.target.closest('[data-action]');
       if (!btn) return;
       const a = btn.dataset.action;
+      if (a === 'admin') return isAdmin() ? openAdmin() : openPin();
       if (a === 'p-photo') return file?.click();
       if (a === 'p-emoji') { mode = 'emoji'; return draw(); }
       if (a === 'p-back') { mode = 'list'; return draw(); }
@@ -672,15 +682,17 @@ function openBook({ machine = state.machine, start = null, edit = null } = {}) {
   if (!state.me) return openWho();
   const s = t();
   const form = edit
-    ? { machine: edit.machine, start: edit.start, duration: Math.round((edit.end - edit.start) / MIN), dryerAfter: 0 }
+    ? { machine: edit.machine, start: edit.start, duration: Math.round((edit.end - edit.start) / MIN), dryerAfter: 0, person: edit.person }
     : {
       machine,
       start: start ?? nextFreeStart(machine, state.day === startOfDay(Date.now()) ? roundUp(Date.now()) : atTime(state.day, 9 * 60), state.duration),
       duration: state.duration,
       dryerAfter: 0,
+      person: state.me,
     };
 
   const draw = () => {
+    const admin = isAdmin();
     const end = form.start + form.duration * MIN;
     const main = { start: form.start, end };
     const dryerSlot = form.dryerAfter ? { start: end, end: end + form.dryerAfter * MIN } : null;
@@ -728,21 +740,24 @@ function openBook({ machine = state.machine, start = null, edit = null } = {}) {
       ${form.machine === 'washer' && !edit ? `
         <div class="field-label">${s.dryerAfter}</div>
         <div class="chips">${chips([...new Set([0, 60, 90, 120, 180, 240, form.dryerAfter])].sort((x, y) => x - y), form.dryerAfter, 'f-dryer')}</div>` : ''}
+      ${admin && !edit ? `
+        <div class="field-label">${s.bookFor}</div>
+        <select class="select" data-field="person">${PEOPLE.map(p => `<option value="${esc(p)}" ${p === form.person ? 'selected' : ''}>${esc(displayName(p))}${p === state.me ? ` (${s.you})` : ''}</option>`).join('')}</select>` : ''}
       <div class="summary">
-        ${avatar(state.me, 'sm')}
+        ${avatar(form.person, 'sm')}
         <div>
           <b>${esc(dayLabel(form.start))} · ${hhmm(form.start)}–${hhmm(end)}</b>
           <div class="muted tiny">${machineName(form.machine)}${dryerSlot ? ` + ${s.dryer} ${hhmm(dryerSlot.start)}–${hhmm(dryerSlot.end)}` : ''}</div>
         </div>
       </div>
-      ${problems.length ? `<div class="problems">${problems.map(p => `<div>${ICONS.alert}<span>${p}</span></div>`).join('')}</div>` : ''}
+      ${problems.length ? `<div class="problems ${admin ? 'warn' : ''}">${problems.map(p => `<div>${ICONS.alert}<span>${p}</span></div>`).join('')}</div>` : ''}
       ${fits.map(([action, f]) => `
         <button type="button" class="btn fit" data-action="${action}" data-value="${f.minutes}">
           ${esc((action === 'f-fit-dryer' ? `${s.dryer}: ` : '') + s.fitUntil(hhmm(f.until), fmtDur(f.minutes)))}
         </button>`).join('')}
       <div class="sheet-actions">
         <button type="button" class="btn ghost" data-action="close">${s.cancel}</button>
-        <button type="button" class="btn" data-action="f-submit" ${problems.length ? 'disabled' : ''}>${edit ? s.saveChanges : s.confirm}</button>
+        <button type="button" class="btn" data-action="f-submit" ${problems.length && !admin ? 'disabled' : ''}>${edit ? s.saveChanges : s.confirm}</button>
       </div>
     `, draw);
 
@@ -762,6 +777,7 @@ function openBook({ machine = state.machine, start = null, edit = null } = {}) {
       form.start = d.getTime();
       draw();
     };
+    el.querySelector('[data-field="person"]')?.addEventListener('change', e => { form.person = e.target.value; draw(); });
     const durInput = el.querySelector('[data-field="duration"]');
     if (durInput) bindClock(durInput, v => { form.duration = clampDuration(v); }, draw);
     el.onclick = async e => {
@@ -782,15 +798,16 @@ function openBook({ machine = state.machine, start = null, edit = null } = {}) {
         refreshSheet = null;
         askNotifyPermission();
         const end = form.start + form.duration * MIN;
-        const booking = { machine: form.machine, person: state.me, start: form.start, end };
+        const booking = { machine: form.machine, person: form.person, start: form.start, end };
         try {
           if (edit) {
             await store.replace(edit.id, booking);
           } else {
             await store.add(booking);
             if (form.dryerAfter) {
-              await store.add({ machine: 'dryer', person: state.me, start: end, end: end + form.dryerAfter * MIN });
+              await store.add({ machine: 'dryer', person: form.person, start: end, end: end + form.dryerAfter * MIN });
             }
+            if (form.person !== state.me) await notifyAssigned(form.person, booking);
             state.duration = form.duration;
             storage.set('laundry.duration', String(form.duration));
           }
@@ -836,13 +853,14 @@ function openDetail(id) {
     const now = Date.now();
     const mine = b.person === state.me;
     const unknown = b.person === UNKNOWN; // reported by someone: anyone can adjust, finish or claim it
-    const canManage = mine || unknown;
+    const admin = isAdmin(); // God mode: any booking can be changed
+    const canManage = mine || unknown || admin;
     const live = b.start <= now && b.end > now;
     const done = b.end <= now;
     const startsSoon = !live && !done && b.start - now <= 30 * MIN;
     // someone else's finished booking: ask them (by push) to take their laundry out
     const canNudge = state.me && !mine && !unknown && done && now - b.end < 12 * 3600e3 && state.subscribers.has(b.person);
-    const linked = !mine ? [] : sorted().filter(x => x.person === b.person && x.machine !== b.machine && x.id !== b.id
+    const linked = !(mine || (admin && !unknown)) ? [] : sorted().filter(x => x.person === b.person && x.machine !== b.machine && x.id !== b.id
       && startOfDay(x.start) === startOfDay(b.start) && x.start > now);
 
     let body;
@@ -868,7 +886,7 @@ function openDetail(id) {
       body = `
         <h3 class="confirm-title">${s.transferTitle}</h3>
         <div class="people compact">
-          ${PEOPLE.filter(p => p !== state.me).map(p => `
+          ${PEOPLE.filter(p => p !== b.person).map(p => `
             <button type="button" class="person ${p === target ? 'active' : ''}" data-action="t-pick" data-person="${esc(p)}">
               <span class="av-wrap">${avatar(p)}${state.subscribers.has(p) ? `<i class="bell-badge">${ICONS.bell}</i>` : ''}</span>
               <span>${esc(displayName(p))}</span>
@@ -900,13 +918,14 @@ function openDetail(id) {
           ${unknown && state.me && !done ? `<button type="button" class="btn" data-action="claim">${s.claim}</button>` : ''}
           ${canManage && (live || startsSoon) ? `<button type="button" class="btn ${unknown ? 'ghost' : ''}" data-action="remaining">${s.setRemaining}</button>` : ''}
           ${canManage && live ? `<button type="button" class="btn ghost" data-action="finish">${s.finishNow}</button>` : ''}
-          ${mine && !done ? `
+          ${(mine && !done) || admin ? `
             <div class="btn-row">
               <button type="button" class="btn ghost" data-action="edit">${s.edit}</button>
               <button type="button" class="btn danger" data-action="delete">${s.deleteBooking}</button>
             </div>` : ''}
-          ${mine && !done ? `<button type="button" class="btn ghost" data-action="transfer">${ICONS.swap}<span>${s.transfer}</span></button>` : ''}
-          ${unknown && !done ? `<button type="button" class="btn danger" data-action="delete">${s.deleteBooking}</button>` : ''}
+          ${(mine && !done) || admin ? `<button type="button" class="btn ghost" data-action="transfer">${ICONS.swap}<span>${s.transfer}</span></button>` : ''}
+          ${admin && !unknown ? `<button type="button" class="btn ghost" data-action="g-notify-one">📣 ${esc(s.adminNotify(displayName(b.person)))}</button>` : ''}
+          ${unknown && !done && !admin ? `<button type="button" class="btn danger" data-action="delete">${s.deleteBooking}</button>` : ''}
           ${!done ? `<button type="button" class="btn ghost" data-action="ics">${ICONS.cal}<span>${s.addCal}</span></button>` : ''}
           ${canNudge ? `<button type="button" class="btn" data-action="nudge">${esc(s.nudge(displayName(b.person)))}</button>` : ''}
           <button type="button" class="btn ghost" data-action="close">${s.close}</button>
@@ -943,6 +962,7 @@ function openDetail(id) {
       if (a === 'edit') return openBook({ edit: b });
       if (a === 'back') { mode = 'view'; remaining = null; target = null; return draw(); }
       if (a === 'transfer') { mode = 'transfer'; return draw(); }
+      if (a === 'g-notify-one') return openNotify(b.person);
       if (a === 't-pick') { target = btn.dataset.person; return draw(); }
       if (a === 'remaining') { mode = 'remaining'; return draw(); }
       if (a === 'r-step') { remaining = Math.min(MAX_MIN, Math.max(1, remaining + Number(btn.dataset.value))); return draw(); }
@@ -970,13 +990,17 @@ function openDetail(id) {
         if (a === 't-save' && target) {
           // the booking changes hands (same times), then the new owner is told by push
           await store.replace(b.id, { machine: b.machine, person: target, start: b.start, end: b.end });
-          try {
-            await store.nudge(`transfer_${b.id}_${Date.now()}`.replace(/[^\w-]/g, '_'), {
-              to: target, from: displayName(state.me), machine: b.machine, bookingId: b.id, at: Date.now(),
-              kind: 'transfer', start: b.start, end: b.end,
-            });
-          } catch (err) {
-            console.error(err);
+          if (b.person === state.me) {
+            try {
+              await store.nudge(`transfer_${b.id}_${Date.now()}`.replace(/[^\w-]/g, '_'), {
+                to: target, from: displayName(state.me), machine: b.machine, bookingId: b.id, at: Date.now(),
+                kind: 'transfer', start: b.start, end: b.end,
+              });
+            } catch (err) {
+              console.error(err);
+            }
+          } else {
+            await notifyAssigned(target, b); // an admin moved somebody else's booking
           }
           const who = displayName(target);
           toast(state.subscribers.has(target) ? s.transferred(who) : s.transferredNoNotif(who));
@@ -1025,6 +1049,148 @@ function downloadIcs(b) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+// ---------- God mode ----------
+const FAILS = 'laundry.adminFails';
+
+async function notifyAssigned(target, b) {
+  try {
+    await store.nudge(`assign_${b.id || 'new'}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`.replace(/[^\w-]/g, '_'), {
+      to: target, from: 'admin', machine: b.machine, bookingId: b.id || 'new', at: Date.now(),
+      kind: 'assign', start: b.start, end: b.end,
+    });
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function openPin() {
+  const s = t();
+  openSheet(`
+    <h2>🔑 ${s.godMode}</h2>
+    <p class="muted">${s.pinHint}</p>
+    <input class="pin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" data-field="pin" placeholder="••••••••">
+    <p class="pin-error" data-role="error"></p>
+    <div class="sheet-actions">
+      <button type="button" class="btn ghost" data-action="close">${s.cancel}</button>
+      <button type="button" class="btn" data-action="pin-ok">${s.unlock}</button>
+    </div>`);
+  const input = sheet().querySelector('[data-field="pin"]');
+  const error = sheet().querySelector('[data-role="error"]');
+  const okBtn = sheet().querySelector('[data-action="pin-ok"]');
+  input.focus();
+  const readFails = () => { try { return JSON.parse(storage.get(FAILS)) || { n: 0, until: 0 }; } catch { return { n: 0, until: 0 }; } };
+  const submit = async () => {
+    const f = readFails();
+    if (f.until > Date.now()) { error.textContent = s.pinLocked(Math.ceil((f.until - Date.now()) / 1000)); return; }
+    if (!input.value.trim()) return;
+    okBtn.disabled = true;
+    let ok = false;
+    try { ok = await checkPin(input.value.trim()); } catch (err) { console.error(err); }
+    okBtn.disabled = false;
+    if (ok) {
+      storage.set(FAILS, '');
+      storage.set('laundry.admin', String(Date.now() + UNLOCK_MS));
+      toast(s.godUnlocked);
+      render();
+      return openAdmin();
+    }
+    const n = f.n + 1;
+    if (n >= MAX_TRIES) {
+      storage.set(FAILS, JSON.stringify({ n: 0, until: Date.now() + LOCK_MS }));
+      error.textContent = s.pinLocked(LOCK_MS / 1000);
+    } else {
+      storage.set(FAILS, JSON.stringify({ n, until: 0 }));
+      error.textContent = s.pinWrong(MAX_TRIES - n);
+    }
+    input.value = '';
+    input.focus();
+  };
+  input.onkeydown = e => { if (e.key === 'Enter') submit(); };
+  sheet().onclick = e => {
+    const a = e.target.closest('[data-action]')?.dataset.action;
+    if (a === 'close') closeSheet();
+    if (a === 'pin-ok') submit();
+  };
+}
+
+function openAdmin() {
+  const s = t();
+  if (!isAdmin()) return openPin();
+  openSheet(`
+    <h2>🔑 ${s.godMode}</h2>
+    <p class="ok-line">${s.godOnUntil(hhmm(Number(storage.get('laundry.admin'))))}</p>
+    <ul class="god-list">${s.godPowers.map(x => `<li>${x}</li>`).join('')}</ul>
+    <div class="sheet-actions stack">
+      <button type="button" class="btn" data-action="g-notify">📣 ${s.sendNotif}</button>
+      <button type="button" class="btn danger" data-action="g-lock">🔒 ${s.lockGod}</button>
+      <button type="button" class="btn ghost" data-action="close">${s.close}</button>
+    </div>`);
+  sheet().onclick = e => {
+    const a = e.target.closest('[data-action]')?.dataset.action;
+    if (a === 'close') closeSheet();
+    if (a === 'g-notify') openNotify('*');
+    if (a === 'g-lock') {
+      storage.set('laundry.admin', '0');
+      closeSheet();
+      toast(s.godLocked);
+      render();
+    }
+  };
+}
+
+// Free-text notification from God mode, to one person or to everyone with notifications.
+function openNotify(to = '*') {
+  const s = t();
+  const form = { to, text: '' };
+  const draw = () => {
+    const people = form.to === '*' ? state.subscribers.size : state.subscribers.has(form.to) ? 1 : 0;
+    openSheet(`
+      <h2>📣 ${s.sendNotif}</h2>
+      <div class="field-label">${s.notifTo}</div>
+      <select class="select" data-field="to">
+        <option value="*" ${form.to === '*' ? 'selected' : ''}>${esc(s.everyoneN(state.subscribers.size))}</option>
+        ${PEOPLE.map(p => `<option value="${esc(p)}" ${p === form.to ? 'selected' : ''}>${esc(displayName(p))}${state.subscribers.has(p) ? ' 🔔' : ''}</option>`).join('')}
+      </select>
+      <div class="field-label">${s.messageLabel}</div>
+      <textarea class="textarea" data-field="text" rows="3" maxlength="200" placeholder="${esc(s.messagePh)}">${esc(form.text)}</textarea>
+      <div class="chips quick">${s.quickMsgs.map((m, i) => `<button type="button" class="chip" data-action="g-quick" data-i="${i}">${esc(m)}</button>`).join('')}</div>
+      ${people === 0 ? `<div class="problems warn"><div>${ICONS.alert}<span>${s.noRecipient}</span></div></div>` : ''}
+      <div class="sheet-actions">
+        <button type="button" class="btn ghost" data-action="close">${s.cancel}</button>
+        <button type="button" class="btn" data-action="g-send" ${people === 0 || !form.text.trim() ? 'disabled' : ''}>${s.sendBtn}</button>
+      </div>`);
+    const el = sheet();
+    el.querySelector('[data-field="to"]').onchange = e => { form.to = e.target.value; draw(); };
+    const ta = el.querySelector('[data-field="text"]');
+    ta.oninput = () => {
+      form.text = ta.value;
+      el.querySelector('[data-action="g-send"]').disabled = people === 0 || !form.text.trim();
+    };
+    el.onclick = async e => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const a = btn.dataset.action;
+      if (a === 'close') return closeSheet();
+      if (a === 'g-quick') { form.text = s.quickMsgs[Number(btn.dataset.i)]; return draw(); }
+      if (a === 'g-send') {
+        btn.disabled = true;
+        try {
+          await store.nudge(`msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, {
+            to: form.to, from: 'admin', at: Date.now(), kind: 'message', text: form.text.trim(),
+          });
+          toast(form.to === '*' ? s.sentToAll(people) : s.sentTo(displayName(form.to)));
+          closeSheet();
+        } catch (err) {
+          console.error(err);
+          btn.disabled = false;
+          toast(s.error);
+        }
+      }
+    };
+  };
+  draw();
 }
 
 // ---------- help: install + notifications ----------
@@ -1221,6 +1387,8 @@ $('#app').addEventListener('click', e => {
     toggleNotify();
   } else if (a === 'help') {
     openHelp();
+  } else if (a === 'admin') {
+    isAdmin() ? openAdmin() : openPin();
   } else if (a === 'busy') {
     openBusy(el.dataset.machine);
   } else if (a === 'view') {

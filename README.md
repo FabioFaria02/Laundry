@@ -20,6 +20,7 @@ Funciona em iPhone e Android — abre-se no browser e pode ser adicionada ao ecr
 - **Perfil**: mudar o nome, foto da galeria ou emoji em vez da inicial (em "Quem és tu?"); o sino mostra quem tem notificações.
 - **Avisar para tirar a roupa**: numa reserva já terminada de outra pessoa (com notificações), envia-lhe um push.
 - **Melhores horas**: mapa das horas mais ocupadas nas últimas 4 semanas.
+- **Máquina ocupada por alguém**: marca uma máquina como ocupada (com os minutos do visor) quando não sabes de quem é; ninguém recebe notificações e qualquer pessoa a pode libertar ou reclamar ("É minha").
 - **Adicionar ao calendário** (.ics) com lembrete 10 min antes e no fim do programa.
 - Inglês e português (botão EN/PT), modo escuro automático.
 - Regras da lavandaria (moedas de 50 CZK, portas entreabertas).

@@ -8,6 +8,9 @@ const PEOPLE = [
   'Anna R.', 'Anna N.', 'Aslı', 'Charlélie', 'Clara', 'Maria',
   'Martyna', 'Mimi', 'Ourania', 'Sudenaz', 'Umer', 'Veve',
 ];
+// Booking owner used when somebody reports a machine running and nobody knows whose it is.
+// It matches no registered phone, so it never produces notifications.
+const UNKNOWN = '?';
 const MACHINES = { washer: { num: 2 }, dryer: { num: 1 } };
 const DURATIONS = [30, 45, 60, 90, 120, 180, 240];
 const MAX_MIN = 240; // longest booking the landlady allows (4 h)
@@ -56,13 +59,13 @@ const fmtDur = d => (d < 60 ? `${d} min` : `${Math.floor(d / 60)} h${d % 60 ? ` 
 const machineName = m => (m === 'washer' ? t().washer : t().dryer);
 // A person is identified by the name in PEOPLE (bookings, reminders and profiles use it);
 // the name they pick for themselves only changes how it is shown.
-const displayName = person => state.profiles[person]?.name || person;
+const displayName = person => (person === UNKNOWN ? t().someone : state.profiles[person]?.name || person);
 const PHOTO_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 const avatar = (name, cls = '') => {
   const p = state.profiles[name] || {};
   if (p.photo && PHOTO_RE.test(p.photo)) return `<span class="avatar photo ${cls}" style="background-image:url('${p.photo}')"></span>`;
   if (p.emoji) return `<span class="avatar emoji ${cls}" style="--h:${hue(name)}">${esc(p.emoji)}</span>`;
-  return `<span class="avatar ${cls}" style="--h:${hue(name)}">${esc([...displayName(name)][0] || '?')}</span>`;
+  return `<span class="avatar ${cls}" style="--h:${hue(name)}">${name === UNKNOWN ? '?' : esc([...displayName(name)][0] || '?')}</span>`;
 };
 
 // ---------- state ----------
@@ -162,6 +165,8 @@ function render() {
 
     ${bestHoursSection()}
 
+    ${busyReportSection()}
+
     <details class="card rules">
       <summary>${ICONS.info}<span>${s.howItWorks}</span></summary>
       <ol>${s.rules.map(r => `<li>${r}</li>`).join('')}</ol>
@@ -201,7 +206,7 @@ function machineCard(m) {
       <div class="who">${avatar(cur.person, 'sm')}<span>${esc(displayName(cur.person))}${cur.person === state.me ? ` (${s.you})` : ''}</span></div>
       <div class="big">${esc(s.minLeft(minutesUntil(cur.end)))}</div>
       <div class="progress"><span style="width:${pct}%"></span></div>`;
-    if (cur.person === state.me) {
+    if (cur.person === state.me || cur.person === UNKNOWN) {
       action = `<button class="btn small" data-action="done" data-id="${esc(cur.id)}">${s.markDone}</button>`;
     }
   } else {
@@ -255,6 +260,22 @@ function busyMap(machine) {
   }
   const weeks = Math.min(4, Math.max(1, Math.ceil((now - Math.min(...past.map(b => b.start))) / (7 * DAY))));
   return grid.map(day => day.map(minutes => Math.min(1, minutes / (120 * weeks))));
+}
+
+function busyReportSection() {
+  const s = t();
+  return `
+    <section class="card report">
+      <h2>${s.busyTitle}</h2>
+      <p class="muted tiny">${s.busyHint}</p>
+      <div class="btn-row">
+        ${['washer', 'dryer'].map(m => {
+    const cur = currentOf(m);
+    return `<button type="button" class="btn ghost" data-action="busy" data-machine="${m}" ${cur ? 'disabled' : ''}>
+            ${ICONS[m]}<span>${m === 'washer' ? s.washerShort : s.dryerShort}${cur ? ` · ${esc(s.inUse.toLowerCase())}` : ''}</span></button>`;
+  }).join('')}
+      </div>
+    </section>`;
 }
 
 function bestHoursSection() {
@@ -529,6 +550,73 @@ async function photoToDataUrl(file) {
   return url;
 }
 
+// Someone saw a machine running but doesn't know whose it is: mark it busy for the minutes
+// shown on its display. Nobody is notified.
+function openBusy(machine) {
+  const s = t();
+  const form = { machine, minutes: 60 };
+  const draw = () => {
+    const now = Math.floor(Date.now() / MIN) * MIN;
+    const end = now + form.minutes * MIN;
+    const cur = currentOf(form.machine);
+    const clashes = cur ? [] : conflictsFor(form.machine, { start: now, end });
+    openSheet(`
+      <h2>${s.busyTitle}</h2>
+      <p class="muted tiny">${s.busyHint}</p>
+      <div class="segmented wide">
+        ${['washer', 'dryer'].map(m => `
+          <button type="button" aria-selected="${form.machine === m}" data-action="b-machine" data-value="${m}">
+            ${ICONS[m]}<span>${machineName(m)}</span>
+          </button>`).join('')}
+      </div>
+      <label class="remaining"><span>${s.minutesOnDisplay}</span>
+        <div class="stepper">
+          <button type="button" class="chip" data-action="b-step" data-value="-5">−5</button>
+          <input type="number" inputmode="numeric" min="1" max="${MAX_MIN}" data-field="minutes" value="${form.minutes}">
+          <button type="button" class="chip" data-action="b-step" data-value="5">+5</button>
+        </div>
+      </label>
+      <div class="new-range"><b>${esc(s.busyUntil(hhmm(end)))}</b></div>
+      ${cur ? `<div class="problems"><div>${ICONS.alert}<span>${esc(s.busyAlready(machineName(form.machine), displayName(cur.person)))}</span></div></div>` : ''}
+      ${clashes.length ? `<div class="problems warn">${clashes.map(c => `<div>${ICONS.alert}<span>${s.conflict} ${esc(displayName(c.person))} (${hhmm(c.start)}–${hhmm(c.end)})</span></div>`).join('')}</div>` : ''}
+      <div class="sheet-actions">
+        <button type="button" class="btn ghost" data-action="close">${s.cancel}</button>
+        <button type="button" class="btn" data-action="b-save" ${cur ? 'disabled' : ''}>${s.markBusy}</button>
+      </div>`, draw);
+
+    const input = sheet().querySelector('[data-field="minutes"]');
+    input.oninput = () => { const v = Math.round(Number(input.value)); if (v >= 1) form.minutes = Math.min(MAX_MIN, v); };
+    // deferred: the change can fire on blur while the sheet is being redrawn
+    input.onchange = () => setTimeout(draw);
+    sheet().onclick = async e => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const a = btn.dataset.action;
+      if (a === 'close') return closeSheet();
+      if (a === 'b-machine') { form.machine = btn.dataset.value; return draw(); }
+      if (a === 'b-step') { form.minutes = Math.min(MAX_MIN, Math.max(1, form.minutes + Number(btn.dataset.value))); return draw(); }
+      if (a === 'b-save') {
+        btn.disabled = true;
+        refreshSheet = null;
+        try {
+          const start = Math.floor(Date.now() / MIN) * MIN;
+          await store.add({ machine: form.machine, person: UNKNOWN, start, end: start + form.minutes * MIN });
+          state.machine = form.machine;
+          closeSheet();
+          toast(s.busyDone);
+          render();
+        } catch (err) {
+          console.error(err);
+          refreshSheet = draw;
+          btn.disabled = false;
+          toast(s.error);
+        }
+      }
+    };
+  };
+  draw();
+}
+
 const clampDuration = d => Math.min(MAX_MIN, Math.max(5, Math.round(d)));
 
 // If `slot` only collides with bookings that start after it, how long can it be to end
@@ -715,12 +803,14 @@ function openDetail(id) {
     if (!b) return closeSheet();
     const now = Date.now();
     const mine = b.person === state.me;
+    const unknown = b.person === UNKNOWN; // reported by someone: anyone can adjust, finish or claim it
+    const canManage = mine || unknown;
     const live = b.start <= now && b.end > now;
     const done = b.end <= now;
     const startsSoon = !live && !done && b.start - now <= 30 * MIN;
     // someone else's finished booking: ask them (by push) to take their laundry out
-    const canNudge = state.me && !mine && done && now - b.end < 12 * 3600e3 && state.subscribers.has(b.person);
-    const linked = sorted().filter(x => x.person === b.person && x.machine !== b.machine && x.id !== b.id
+    const canNudge = state.me && !mine && !unknown && done && now - b.end < 12 * 3600e3 && state.subscribers.has(b.person);
+    const linked = !mine ? [] : sorted().filter(x => x.person === b.person && x.machine !== b.machine && x.id !== b.id
       && startOfDay(x.start) === startOfDay(b.start) && x.start > now);
 
     let body;
@@ -764,13 +854,15 @@ function openDetail(id) {
     } else {
       body = `
         <div class="sheet-actions stack">
-          ${mine && (live || startsSoon) ? `<button type="button" class="btn" data-action="remaining">${s.setRemaining}</button>` : ''}
-          ${mine && live ? `<button type="button" class="btn ghost" data-action="finish">${s.finishNow}</button>` : ''}
+          ${unknown && state.me && !done ? `<button type="button" class="btn" data-action="claim">${s.claim}</button>` : ''}
+          ${canManage && (live || startsSoon) ? `<button type="button" class="btn ${unknown ? 'ghost' : ''}" data-action="remaining">${s.setRemaining}</button>` : ''}
+          ${canManage && live ? `<button type="button" class="btn ghost" data-action="finish">${s.finishNow}</button>` : ''}
           ${mine && !done ? `
             <div class="btn-row">
               <button type="button" class="btn ghost" data-action="edit">${s.edit}</button>
               <button type="button" class="btn danger" data-action="delete">${s.deleteBooking}</button>
             </div>` : ''}
+          ${unknown && !done ? `<button type="button" class="btn danger" data-action="delete">${s.deleteBooking}</button>` : ''}
           ${!done ? `<button type="button" class="btn ghost" data-action="ics">${ICONS.cal}<span>${s.addCal}</span></button>` : ''}
           ${canNudge ? `<button type="button" class="btn" data-action="nudge">${esc(s.nudge(displayName(b.person)))}</button>` : ''}
           <button type="button" class="btn ghost" data-action="close">${s.close}</button>
@@ -792,6 +884,7 @@ function openDetail(id) {
           <div class="muted tiny">${live ? esc(s.minLeft(minutesUntil(b.end))) : done ? '' : esc(s.inMin(minutesUntil(b.start)))}</div>
         </div>
       </div>
+      ${unknown ? `<p class="muted tiny unknown-note">${s.unknownNote}</p>` : ''}
       ${body}`, draw);
 
     const input = sheet().querySelector('[data-field="remaining"]');
@@ -829,11 +922,12 @@ function openDetail(id) {
         btn.disabled = false;
         return;
       }
-      if (!['finish', 'c-confirm', 'r-save'].includes(a)) return;
+      if (!['finish', 'c-confirm', 'r-save', 'claim'].includes(a)) return;
       busy = true;
       btn.disabled = true;
       try {
         if (a === 'finish') { await store.finish(b.id, Date.now()); toast(s.freed); }
+        if (a === 'claim') { await store.replace(b.id, { machine: b.machine, person: state.me, start: b.start, end: b.end }); toast(s.claimed); }
         if (a === 'c-confirm') {
           const extra = [...sheet().querySelectorAll('[data-linked]:checked')].map(x => x.dataset.linked);
           await Promise.all([b.id, ...extra].map(x => store.remove(x)));
@@ -1073,6 +1167,8 @@ $('#app').addEventListener('click', e => {
     toggleNotify();
   } else if (a === 'help') {
     openHelp();
+  } else if (a === 'busy') {
+    openBusy(el.dataset.machine);
   } else if (a === 'machine') {
     state.machine = el.dataset.machine;
     storage.set('laundry.machine', state.machine);

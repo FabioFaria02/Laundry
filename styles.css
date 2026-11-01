@@ -290,8 +290,6 @@ h2 { font-size: 18px; letter-spacing: -.01em; margin: 0 0 12px; }
 .new-range { display: grid; justify-items: center; gap: 2px; margin: 14px 0 4px; text-align: center; }
 .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .custom-duration { margin-top: 12px; }
-.custom-duration input { width: 96px; font-size: 26px; }
-.custom-duration .unit { color: var(--muted); font-weight: 600; margin-left: -6px; }
 .btn.fit { width: 100%; margin-top: 10px; background: var(--accent-soft); color: var(--accent); }
 
 /* profile pictures / emojis */
@@ -384,3 +382,12 @@ h2 { font-size: 18px; letter-spacing: -.01em; margin: 0 0 12px; }
 .report .btn:disabled { opacity: .5; }
 .unknown-note { margin: 10px 2px 0; }
 .report .btn:disabled span { font-size: 13px; line-height: 1.25; }
+
+/* time picker: -5 -1 [ 1:05 ] +1 +5 */
+.stepper.clock { gap: 6px; }
+.stepper.clock .chip.step { width: 44px; height: 48px; padding: 0; font-size: 15px; flex: none; }
+.clock-val { flex: 1; min-width: 0; display: grid; justify-items: center; }
+.stepper.clock input { width: 100%; max-width: 96px; font-size: 28px; padding: 4px 2px; }
+.clock-val .unit { font-size: 12px; font-weight: 600; color: var(--muted); line-height: 1.2; margin-top: 2px; }
+@media (max-width: 360px) { .stepper.clock .chip.step { width: 38px; } .stepper.clock { gap: 4px; } }
+.fields label, .fields input { min-width: 0; }

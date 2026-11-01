@@ -56,6 +56,29 @@ const overlaps = (a, b) => a.start < b.end && b.start < a.end;
 const minutesUntil = ms => Math.max(1, Math.ceil((ms - Date.now()) / MIN));
 const hue = name => [...name].reduce((h, c) => (h * 31 + c.codePointAt(0)) % 360, 7);
 const fmtDur = d => (d < 60 ? `${d} min` : `${Math.floor(d / 60)} h${d % 60 ? ` ${pad(d % 60)}` : ''}`);
+// Minutes shown as "45" below an hour and "1:05" from an hour up.
+const fmtClock = m => (m < 60 ? String(m) : `${Math.floor(m / 60)}:${pad(m % 60)}`);
+// "1:05", "1h05" or plain minutes ("65") -> minutes; NaN when it is not a time.
+function parseClock(text) {
+  const t = String(text).trim().toLowerCase();
+  const hm = t.match(/^(\d+)\s*[:h]\s*(\d{0,2})$/);
+  if (hm) return Number(hm[1]) * 60 + Number(hm[2] || 0);
+  return /^\d+$/.test(t) ? Number(t) : NaN;
+}
+// Time picker: -5 -1 on the left, the value in the middle, +1 +5 on the right.
+const stepper = ({ field, value, action }) => {
+  const step = d => `<button type="button" class="chip step" data-action="${action}" data-value="${d}">${d > 0 ? '+' : '−'}${Math.abs(d)}</button>`;
+  return `<div class="stepper clock">${step(-5)}${step(-1)}
+    <div class="clock-val"><input type="text" inputmode="numeric" autocomplete="off" data-field="${field}" value="${fmtClock(value)}"><span class="unit">${value < 60 ? 'min' : 'h'}</span></div>
+    ${step(1)}${step(5)}</div>`;
+};
+// Typing is parsed as it happens; the sheet is redrawn afterwards so the text is formatted again.
+function bindClock(input, apply, redraw) {
+  input.oninput = () => { const v = parseClock(input.value); if (v >= 1) apply(v); };
+  // deferred: the change can fire on blur while the sheet is being redrawn
+  input.onchange = () => setTimeout(redraw);
+  input.onfocus = () => input.select();
+}
 const machineName = m => (m === 'washer' ? t().washer : t().dryer);
 // A person is identified by the name in PEOPLE (bookings, reminders and profiles use it);
 // the name they pick for themselves only changes how it is shown.
@@ -569,13 +592,9 @@ function openBusy(machine) {
             ${ICONS[m]}<span>${machineName(m)}</span>
           </button>`).join('')}
       </div>
-      <label class="remaining"><span>${s.minutesOnDisplay}</span>
-        <div class="stepper">
-          <button type="button" class="chip" data-action="b-step" data-value="-5">−5</button>
-          <input type="number" inputmode="numeric" min="1" max="${MAX_MIN}" data-field="minutes" value="${form.minutes}">
-          <button type="button" class="chip" data-action="b-step" data-value="5">+5</button>
-        </div>
-      </label>
+      <div class="remaining"><span>${s.minutesOnDisplay}</span>
+        ${stepper({ field: 'minutes', value: form.minutes, action: 'b-step' })}
+      </div>
       <div class="new-range"><b>${esc(s.busyUntil(hhmm(end)))}</b></div>
       ${cur ? `<div class="problems"><div>${ICONS.alert}<span>${esc(s.busyAlready(machineName(form.machine), displayName(cur.person)))}</span></div></div>` : ''}
       ${clashes.length ? `<div class="problems warn">${clashes.map(c => `<div>${ICONS.alert}<span>${s.conflict} ${esc(displayName(c.person))} (${hhmm(c.start)}–${hhmm(c.end)})</span></div>`).join('')}</div>` : ''}
@@ -584,10 +603,7 @@ function openBusy(machine) {
         <button type="button" class="btn" data-action="b-save" ${cur ? 'disabled' : ''}>${s.markBusy}</button>
       </div>`, draw);
 
-    const input = sheet().querySelector('[data-field="minutes"]');
-    input.oninput = () => { const v = Math.round(Number(input.value)); if (v >= 1) form.minutes = Math.min(MAX_MIN, v); };
-    // deferred: the change can fire on blur while the sheet is being redrawn
-    input.onchange = () => setTimeout(draw);
+    bindClock(sheet().querySelector('[data-field="minutes"]'), v => { form.minutes = Math.min(MAX_MIN, v); }, draw);
     sheet().onclick = async e => {
       const btn = e.target.closest('[data-action]');
       if (!btn) return;
@@ -685,12 +701,7 @@ function openBook({ machine = state.machine, start = null, edit = null } = {}) {
       <div class="chips">${chips(durations, form.duration, 'f-duration')}
         <button type="button" class="chip ${form.custom ? 'active' : ''}" data-action="f-custom">${s.custom}</button></div>
       ${form.custom ? `
-        <div class="stepper custom-duration">
-          <button type="button" class="chip" data-action="f-step" data-value="-5">−5</button>
-          <input type="number" inputmode="numeric" min="5" max="${MAX_MIN}" data-field="duration" value="${form.duration}">
-          <span class="unit">min</span>
-          <button type="button" class="chip" data-action="f-step" data-value="5">+5</button>
-        </div>` : ''}
+        <div class="custom-duration">${stepper({ field: 'duration', value: form.duration, action: 'f-step' })}</div>` : ''}
       ${form.machine === 'washer' && !edit ? `
         <div class="field-label">${s.dryerAfter}</div>
         <div class="chips">${chips([...new Set([0, 60, 90, 120, 180, 240, form.dryerAfter])].sort((x, y) => x - y), form.dryerAfter, 'f-dryer')}</div>` : ''}
@@ -729,11 +740,7 @@ function openBook({ machine = state.machine, start = null, edit = null } = {}) {
       draw();
     };
     const durInput = el.querySelector('[data-field="duration"]');
-    if (durInput) {
-      durInput.oninput = () => { if (Number(durInput.value) >= 1) form.duration = clampDuration(Number(durInput.value)); };
-      // deferred: the change can fire on blur while the sheet is being redrawn
-      durInput.onchange = () => setTimeout(draw);
-    }
+    if (durInput) bindClock(durInput, v => { form.duration = clampDuration(v); }, draw);
     el.onclick = async e => {
       const btn = e.target.closest('[data-action]');
       if (!btn) return;
@@ -819,14 +826,10 @@ function openDetail(id) {
       const { start, end } = adjusted(b, remaining);
       const hits = conflictsFor(b.machine, { start, end }, b.id);
       body = `
-        <label class="remaining">
+        <div class="remaining">
           <span>${s.remainingHint}</span>
-          <div class="stepper">
-            <button type="button" class="chip" data-action="r-step" data-value="-5">−5</button>
-            <input type="number" inputmode="numeric" min="1" max="${MAX_MIN}" data-field="remaining" value="${remaining}">
-            <button type="button" class="chip" data-action="r-step" data-value="5">+5</button>
-          </div>
-        </label>
+          ${stepper({ field: 'remaining', value: remaining, action: 'r-step' })}
+        </div>
         <div class="new-range">
           <b>${esc(s.newRange(`${hhmm(start)}–${hhmm(end)}`))}</b>
           <span class="muted tiny">${esc(s.wasRange(`${hhmm(b.start)}–${hhmm(b.end)}`))}</span>
@@ -888,13 +891,7 @@ function openDetail(id) {
       ${body}`, draw);
 
     const input = sheet().querySelector('[data-field="remaining"]');
-    if (input) {
-      input.oninput = () => {
-        const v = Math.round(Number(input.value));
-        if (v >= 1) remaining = Math.min(MAX_MIN, v);
-      };
-      input.onchange = () => setTimeout(draw);
-    }
+    if (input) bindClock(input, v => { remaining = Math.min(MAX_MIN, v); }, draw);
 
     sheet().onclick = async e => {
       const btn = e.target.closest('[data-action]');
